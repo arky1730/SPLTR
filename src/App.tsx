@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AudioLines, Check, FolderOutput, Gauge, Play, Settings, ShieldCheck, Square, Zap } from "lucide-react";
 import { DropZone } from "./components/DropZone";
 import { QueuePanel } from "./components/QueuePanel";
+import { ResultPlayer } from "./components/ResultPlayer";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { DownloadOverlay, type DownloadState } from "./components/DownloadOverlay";
 import { backend } from "./lib/backend";
@@ -21,6 +22,7 @@ export default function App() {
   const [items, setItems] = useState<QueueItem[]>([]);
   const [device, setDevice] = useState<DeviceInfo | null>(null);
   const [processing, setProcessing] = useState(false);
+  const [selectedResultId, setSelectedResultId] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [download, setDownload] = useState<DownloadState>({ visible: false, kind: "model", progress: -1, failed: false });
@@ -43,6 +45,7 @@ export default function App() {
       if (event.rejected.length) setNotice(`${event.rejected.length} unsupported item${event.rejected.length === 1 ? " was" : "s were"} skipped.`);
     } else if (event.type === "queue_item") {
       setItems((current) => current.map((item) => item.id === event.item.id ? { ...item, ...event.item } : item));
+      if (event.item.status === "completed" && event.item.outputs?.length) setSelectedResultId(event.item.id);
     } else if (event.type === "queue_complete") {
       setProcessing(false); setNotice("All tracks are ready.");
     } else if (event.type === "model_download") {
@@ -104,6 +107,14 @@ export default function App() {
     if (folder) setSettings((current) => ({ ...current, outputFolder: folder, outputMode: "custom" }));
   }
 
+  async function revealInFolder(path: string) {
+    try {
+      await backend.revealInFolder(path);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Could not open the output folder.");
+    }
+  }
+
   async function retryDownload() {
     if (download.kind === "runtime") {
       setDownload((current) => ({ ...current, failed: false, progress: -1, message: "Restarting the local AI engine…" }));
@@ -122,6 +133,7 @@ export default function App() {
   const canStart = items.some((item) => item.status === "waiting" || item.status === "failed");
   const outputLabel = settings.outputMode === "source" ? "Beside each source" : settings.outputFolder ?? "Choose output folder";
   const modelLabel = useMemo(() => ({ htdemucs: "HT Demucs", htdemucs_ft: "HT Demucs FT", mdx_extra: "MDX Extra" })[settings.model], [settings.model]);
+  const selectedResult = items.find((item) => item.id === selectedResultId && item.status === "completed") ?? null;
 
   return (
     <div className="app-shell">
@@ -133,7 +145,7 @@ export default function App() {
 
       <main className="workspace">
         <section className="hero-column">
-          <div className="intro"><span className="eyebrow">LOCAL AI STEM SEPARATION</span><h1>Keep the voice.<br /><em>Lose the rest.</em></h1><p>Studio-grade vocal isolation, processed entirely on your PC.</p></div>
+          <div className="intro"><span className="eyebrow">LOCAL AI STEM SEPARATION</span><h1>Split the track.<br /><em>Hear the difference.</em></h1><p>Drop audio, separate locally, and review every stem in one workspace.</p></div>
           <DropZone disabled={processing} onBrowse={() => void browse()} onBrowserFiles={addBrowserFiles} />
           <div className="quick-settings">
             <button onClick={() => setSettingsOpen(true)}><Zap size={16} /><span><small>Model</small><strong>{modelLabel}</strong></span></button>
@@ -144,11 +156,23 @@ export default function App() {
 
         <section className="queue-column">
           {processing && <div className="overall-card"><div className="overall-top"><div><span className="pulse-dot" /><span>SEPARATING</span><strong>{active?.name ?? "Preparing track"}</strong></div><b>{Math.round(overallProgress)}%</b></div><div className="overall-bar"><i style={{ width: `${overallProgress}%` }} /></div><div className="overall-meta"><span>{completed} complete · {waiting} remaining</span><span>{formatDuration(elapsed)} elapsed{active?.etaSeconds ? ` · ${formatDuration(active.etaSeconds)} current ETA` : ""}</span></div></div>}
-          <QueuePanel items={items} processing={processing} onRemove={(id) => setItems((current) => current.filter((item) => item.id !== id))} onClear={() => setItems([])} />
+          <QueuePanel
+            items={items}
+            processing={processing}
+            selectedId={selectedResultId}
+            onSelect={setSelectedResultId}
+            onReveal={(path) => void revealInFolder(path)}
+            onRemove={(id) => {
+              setItems((current) => current.filter((item) => item.id !== id));
+              if (selectedResultId === id) setSelectedResultId(null);
+            }}
+            onClear={() => { setItems([]); setSelectedResultId(null); }}
+          />
           <div className="queue-action">
             <div><span>{items.length ? `${completed} of ${items.length} completed` : "Add audio to begin"}</span><small>Creates *_vocals.wav and *_instrumental.wav</small></div>
             {processing ? <button className="stop-button" onClick={stopQueue}><Square size={14} /> Stop</button> : <button className="primary-button" disabled={!canStart} onClick={startQueue}><Play size={16} fill="currentColor" /> Separate {canStart ? `${items.filter((item) => item.status !== "completed").length} track${items.filter((item) => item.status !== "completed").length === 1 ? "" : "s"}` : ""}</button>}
           </div>
+          <ResultPlayer item={selectedResult} onReveal={(path) => void revealInFolder(path)} />
         </section>
       </main>
 

@@ -146,6 +146,29 @@ fn backend_send(command: Value, state: State<'_, BackendState>) -> Result<(), St
 }
 
 #[tauri::command]
+fn reveal_in_folder(path: String) -> Result<(), String> {
+    let target = PathBuf::from(path);
+    if !target.exists() {
+        return Err(format!("The output no longer exists: {}", target.display()));
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let mut command = Command::new("explorer.exe");
+        command.arg("/select,").arg(&target).creation_flags(CREATE_NO_WINDOW);
+        command
+            .spawn()
+            .map_err(|e| format!("Could not open File Explorer: {e}"))?;
+        Ok(())
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        Err("Showing results in the file manager is only supported on Windows.".to_string())
+    }
+}
+
+#[tauri::command]
 fn backend_stop(state: State<'_, BackendState>) -> Result<(), String> {
     let mut guard = state
         .0
@@ -169,7 +192,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             backend_start,
             backend_send,
-            backend_stop
+            backend_stop,
+            reveal_in_folder
         ])
         .on_window_event(|window, event| {
             if matches!(event, tauri::WindowEvent::Destroyed) {

@@ -1,10 +1,13 @@
-import { Check, CircleAlert, Clock3, Music2, Trash2, X } from "lucide-react";
+import { Check, CircleAlert, Clock3, FolderOpen, Headphones, Music2, Trash2, X } from "lucide-react";
 import type { QueueItem } from "../types";
 import { formatDuration } from "../lib/format";
 
 interface QueuePanelProps {
   items: QueueItem[];
   processing: boolean;
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+  onReveal: (path: string) => void;
   onRemove: (id: string) => void;
   onClear: () => void;
 }
@@ -16,7 +19,7 @@ const statusLabel: Record<QueueItem["status"], string> = {
   failed: "Failed",
 };
 
-export function QueuePanel({ items, processing, onRemove, onClear }: QueuePanelProps) {
+export function QueuePanel({ items, processing, selectedId, onSelect, onReveal, onRemove, onClear }: QueuePanelProps) {
   return (
     <section className="queue-panel" aria-label="Separation queue">
       <div className="queue-header">
@@ -35,7 +38,11 @@ export function QueuePanel({ items, processing, onRemove, onClear }: QueuePanelP
             <span>Your tracks will appear here</span>
           </div>
         ) : items.map((item) => (
-          <article className={`queue-row status-${item.status}`} key={item.id}>
+          <article
+            className={`queue-row status-${item.status} ${selectedId === item.id ? "selected" : ""}`}
+            key={item.id}
+            onClick={() => item.status === "completed" && onSelect(item.id)}
+          >
             <div className="file-icon"><Music2 size={17} /></div>
             <div className="queue-file">
               <strong title={item.path}>{item.name}</strong>
@@ -52,11 +59,34 @@ export function QueuePanel({ items, processing, onRemove, onClear }: QueuePanelP
               {item.status === "processing" && <small>{Math.round(item.progress)}% · {formatDuration(item.etaSeconds)} left</small>}
               {item.status === "completed" && <small>{formatDuration(item.elapsedSeconds)}</small>}
             </div>
-            {!processing && <button className="remove-button" aria-label={`Remove ${item.name}`} onClick={() => onRemove(item.id)}><X size={15} /></button>}
+            <div className="queue-row-actions">
+              {item.status === "completed" && (
+                <>
+                  <button
+                    className="row-action-button"
+                    aria-label={`Preview ${item.name}`}
+                    title="Preview results"
+                    onClick={(event) => { event.stopPropagation(); onSelect(item.id); }}
+                  ><Headphones size={14} /></button>
+                  <button
+                    className="row-action-button"
+                    aria-label={`Show ${item.name} results in folder`}
+                    title="Show in folder"
+                    onClick={(event) => { event.stopPropagation(); onReveal(item.outputs?.[0] ?? item.path); }}
+                  ><FolderOpen size={14} /></button>
+                </>
+              )}
+              {!processing && (
+                <button
+                  className="remove-button"
+                  aria-label={`Remove ${item.name}`}
+                  onClick={(event) => { event.stopPropagation(); onRemove(item.id); }}
+                ><X size={15} /></button>
+              )}
+            </div>
           </article>
         ))}
       </div>
     </section>
   );
 }
-

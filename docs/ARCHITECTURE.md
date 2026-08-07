@@ -22,6 +22,8 @@ The host starts `python.exe -u bootstrap.py`, writes one JSON command per line t
 
 Commands include `configure`, `scan`, `ensure_model`, `start_queue`, `cancel_queue`, `delete_models`, and `shutdown`. Events include `ready`, device changes, scan results, queue items, download state, completion, and recoverable/fatal errors. Shared TypeScript types are in `src/types.ts`; backend parsing is deliberately tolerant so protocol fields can be added later.
 
+Completed queue items expose their original path and paired stem output paths to the React result monitor. Tauri's scoped asset protocol lets the webview play these local files directly, while the `reveal_in_folder` command opens File Explorer with the selected output highlighted.
+
 ## First launch and installer size
 
 CUDA Torch cannot fit in a 120 MB installer. SPLTR bundles the official Windows embeddable Python distribution and FFmpeg, then installs Torch, Torchaudio, and Demucs into AppData at first launch. GPU presence is checked with `nvidia-smi`: CUDA 12.1 wheels are selected for NVIDIA systems and CPU wheels otherwise. Models remain separate and are downloaded by Demucs into the AppData model cache.
@@ -46,4 +48,3 @@ The queue defaults to one model instance and sequential items to limit memory. T
 ## Failure boundaries
 
 Every file is an independent failure boundary. Known decode, missing-file, CUDA OOM, and output errors become safe queue messages. Unknown exceptions are logged and mark only that item failed. Model/runtime downloads have retryable overlay states. The Rust process terminates the Python child when the app window is destroyed.
-

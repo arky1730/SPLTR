@@ -64,6 +64,11 @@ class BackendBridge {
     return typeof result === "string" ? [result] : result ?? [];
   }
 
+  async revealInFolder(path: string): Promise<void> {
+    if (!isTauri()) return;
+    await invoke("reveal_in_folder", { path });
+  }
+
   async onPathDrop(handler: (paths: string[]) => void): Promise<UnlistenFn> {
     if (!isTauri()) return () => undefined;
     return getCurrentWebview().onDragDropEvent((event) => {
@@ -125,4 +130,3 @@ class BackendBridge {
 
 export const backend = new BackendBridge();
 export type { DeviceInfo };
-

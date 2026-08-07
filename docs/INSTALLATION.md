@@ -26,10 +26,12 @@ Runtime files are stored under `%APPDATA%\app.spltr.desktop`:
 
 ## Separate audio
 
-1. Drag files or folders into the large drop area. Folder scanning is recursive.
+1. Drag files or folders into the drop area. Folder scanning is recursive.
 2. Keep **Beside source** or choose a custom output folder.
 3. Optionally select a Demucs model or processing device in Settings.
 4. Select **Separate**.
+
+When a track completes, select it in the queue to compare **Original**, **Vocals**, and **Instrumental** in the result monitor. Use the folder button on the queue row or **Show in folder** in the monitor to reveal the generated WAV files in File Explorer.
 
 For `song.mp3`, SPLTR creates `song_vocals.wav` and `song_instrumental.wav`. Existing output is never overwritten. If either name exists, SPLTR creates the next matched pair, such as `song_vocals (1).wav` and `song_instrumental (1).wav`.
 
