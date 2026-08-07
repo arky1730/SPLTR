@@ -33,7 +33,7 @@ Runtime files are stored under `%APPDATA%\app.spltr.desktop`:
 
 When a track completes, select it in the queue to compare **Original**, **Vocals**, and **Instrumental** in the result monitor. Use the folder button on the queue row or **Show in folder** in the monitor to reveal the generated WAV files in File Explorer.
 
-The waveform is generated locally with the bundled FFmpeg. Enter start and end times in seconds, or use **IN** and **OUT** to copy the current playhead position, then select **Export MP4**. SPLTR creates an 854×480 black-screen H.264/AAC video beside the vocal WAV. A full export is named `song_vocals.mp4`; a trimmed export uses `song_vocals_clip.mp4`. Existing videos are never overwritten.
+The waveform is generated locally with the bundled FFmpeg. Drag the **IN** and **OUT** handles to select a clip, or drag the highlighted middle section to move the whole selection. Start and end fields allow 0.1-second precision, **Preview clip** plays only the selected range, and **Full track** resets the range. Select **Export MP4** to create an 854×480 black-screen H.264/AAC video beside the vocal WAV. A full export is named `song_vocals.mp4`; a trimmed export uses `song_vocals_clip.mp4`. Existing videos are never overwritten.
 
 For `song.mp3`, SPLTR creates `song_vocals.wav` and `song_instrumental.wav`. Existing output is never overwritten. If either name exists, SPLTR creates the next matched pair, such as `song_vocals (1).wav` and `song_instrumental (1).wav`.
 

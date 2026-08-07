@@ -11,6 +11,7 @@ class BackendBridge {
   private handlers = new Set<EventHandler>();
   private unlisten: UnlistenFn[] = [];
   private demoTimers = new Set<number>();
+  private demoAudioUrls = new Map<string, string>();
 
   async start(): Promise<void> {
     if (!isTauri()) {
@@ -30,6 +31,8 @@ class BackendBridge {
     this.demoTimers.clear();
     this.unlisten.forEach((fn) => fn());
     this.unlisten = [];
+    this.demoAudioUrls.forEach((url) => URL.revokeObjectURL(url));
+    this.demoAudioUrls.clear();
     if (isTauri()) await invoke("backend_stop");
   }
 
@@ -130,7 +133,7 @@ class BackendBridge {
           progress,
           elapsedSeconds: (Date.now() - started) / 1000,
           etaSeconds: Math.max(0, (100 - progress) * 0.055),
-          outputs: progress === 100 ? ["vocals.wav", "instrumental.wav"] : undefined,
+          outputs: progress === 100 ? [this.getDemoAudioUrl(`${source.id}-vocals`), this.getDemoAudioUrl(`${source.id}-instrumental`)] : undefined,
         };
         this.emit({ type: "queue_item", item });
         if (progress === 100) {
@@ -143,6 +146,39 @@ class BackendBridge {
       this.demoTimers.add(timer);
     };
     runNext();
+  }
+
+  private getDemoAudioUrl(key: string): string {
+    const existing = this.demoAudioUrls.get(key);
+    if (existing) return existing;
+    const sampleRate = 8000;
+    const seconds = 30;
+    const sampleCount = sampleRate * seconds;
+    const buffer = new ArrayBuffer(44 + sampleCount * 2);
+    const view = new DataView(buffer);
+    const writeText = (offset: number, value: string) => {
+      for (let index = 0; index < value.length; index += 1) view.setUint8(offset + index, value.charCodeAt(index));
+    };
+    writeText(0, "RIFF");
+    view.setUint32(4, 36 + sampleCount * 2, true);
+    writeText(8, "WAVEfmt ");
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, 1, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * 2, true);
+    view.setUint16(32, 2, true);
+    view.setUint16(34, 16, true);
+    writeText(36, "data");
+    view.setUint32(40, sampleCount * 2, true);
+    for (let index = 0; index < sampleCount; index += 1) {
+      const envelope = 0.34 + Math.sin(index / sampleRate * 1.7) * 0.14;
+      const sample = Math.sin(index / sampleRate * Math.PI * 2 * 220) * envelope;
+      view.setInt16(44 + index * 2, Math.round(sample * 32767), true);
+    }
+    const url = URL.createObjectURL(new Blob([buffer], { type: "audio/wav" }));
+    this.demoAudioUrls.set(key, url);
+    return url;
   }
 }
 
