@@ -68,6 +68,11 @@ jobs:
           Copy-Item "python/requirements-runtime.txt" "$portableRoot/backend/requirements-runtime.txt" -Force
           Copy-Item "python/spltr_backend" "$portableRoot/backend/spltr_backend" -Recurse -Force
           Copy-Item "docs/PORTABLE.txt" "$portableRoot/README.txt" -Force
+          & "$portableRoot/python/python.exe" "$portableRoot/backend/bootstrap.py" `
+            --app-data "$portableRoot/smoke-data" `
+            --ffmpeg "$portableRoot/ffmpeg/ffmpeg.exe" `
+            --check-bundle
+          if ($LASTEXITCODE -ne 0) { throw "Portable backend smoke test failed." }
           tar.exe -a -c -f "release/SPLTR_${version}_x64-portable.zip" -C $portableRoot .
           if ($LASTEXITCODE -ne 0) { throw "Portable ZIP creation failed." }
       - name: Upload Windows packages

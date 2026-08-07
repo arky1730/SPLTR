@@ -8,18 +8,21 @@ from __future__ import annotations
 
 import argparse
 from collections import deque
+import importlib
 import json
 import os
 from pathlib import Path
 import shutil
 import subprocess
 import sys
+import traceback
 from typing import NoReturn
 
 
 TORCH_VERSION = "2.5.1"
 DEMUCS_VERSION = "4.1.0"
-RUNTIME_VERSION = f"torch-{TORCH_VERSION}_demucs-{DEMUCS_VERSION}"
+NUMPY_VERSION = "1.26.4"
+RUNTIME_VERSION = f"v2_torch-{TORCH_VERSION}_demucs-{DEMUCS_VERSION}_numpy-{NUMPY_VERSION}"
 CUDA_INDEX = "https://download.pytorch.org/whl/cu121"
 CPU_INDEX = "https://download.pytorch.org/whl/cpu"
 
@@ -84,6 +87,16 @@ def latest_error(lines: deque[str]) -> str | None:
     return None
 
 
+def configure_python_paths(runtime: Path, backend_dir: Path) -> None:
+    """Expose AppData packages and bundled modules to embeddable Python."""
+    sys.path[:0] = [str(runtime), str(backend_dir)]
+
+
+def import_runtime() -> None:
+    for module in ("numpy", "torch", "torchaudio", "demucs"):
+        importlib.import_module(module)
+
+
 def install_runtime(runtime: Path, requirements: Path, log_file: Path) -> None:
     runtime.mkdir(parents=True, exist_ok=True)
     cuda = has_nvidia_gpu()
@@ -131,11 +144,20 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--app-data", required=True, type=Path)
     parser.add_argument("--ffmpeg", required=True, type=Path)
+    parser.add_argument("--check-bundle", action="store_true")
     args = parser.parse_args()
 
     app_data: Path = args.app_data.resolve()
     backend_dir = Path(__file__).resolve().parent
     runtime = app_data / "runtime" / "site-packages"
+    configure_python_paths(runtime, backend_dir)
+
+    if args.check_bundle:
+        import spltr_backend  # noqa: F401
+
+        print("SPLTR backend bundle OK", flush=True)
+        return
+
     runtime_marker = app_data / "runtime" / "version.txt"
     models = app_data / "models"
     logs = app_data / "logs"
@@ -149,27 +171,41 @@ def main() -> None:
         shutil.rmtree(runtime)
     runtime.mkdir(parents=True, exist_ok=True)
 
-    sys.path.insert(0, str(runtime))
     os.environ["TORCH_HOME"] = str(models / "torch")
     os.environ["DEMUCS_CACHE"] = str(models / "demucs")
     os.environ["SPLTR_APP_DATA"] = str(app_data)
     os.environ["SPLTR_FFMPEG"] = str(args.ffmpeg)
 
     try:
-        import torch  # noqa: F401
-        import demucs  # noqa: F401
-    except ImportError:
+        import_runtime()
+    except (ImportError, OSError):
         install_runtime(
             runtime,
             backend_dir / "requirements-runtime.txt",
             logs / "runtime-install.log",
         )
+        importlib.invalidate_caches()
+        try:
+            import_runtime()
+        except (ImportError, OSError) as exc:
+            fail(f"The AI runtime installed but could not be loaded: {exc}")
         runtime_marker.write_text(RUNTIME_VERSION, encoding="utf-8")
-        # Newly installed packages are discoverable because runtime is already on sys.path.
 
-    from spltr_backend.service import run_service
+    try:
+        from spltr_backend.service import run_service
 
-    run_service(app_data=app_data, ffmpeg=args.ffmpeg)
+        run_service(app_data=app_data, ffmpeg=args.ffmpeg)
+    except Exception as exc:
+        start_log = logs / "backend-start.log"
+        with start_log.open("a", encoding="utf-8", errors="replace") as log:
+            traceback.print_exc(file=log)
+        emit({
+            "type": "error",
+            "code": "engine_start_failed",
+            "message": f"The local AI engine could not start: {exc}. Details: {start_log}",
+            "recoverable": False,
+        })
+        raise
 
 
 if __name__ == "__main__":
