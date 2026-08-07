@@ -1,0 +1,3 @@
+# Installed into AppData on first launch; Torch is selected separately for CUDA/CPU.
+demucs==4.0.1
+

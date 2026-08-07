@@ -1,0 +1,37 @@
+{
+  "name": "spltr",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "prepare:windows": "powershell -ExecutionPolicy Bypass -File scripts/prepare-windows-resources.ps1",
+    "build:windows": "powershell -ExecutionPolicy Bypass -File scripts/build-windows.ps1",
+    "test:frontend": "vitest run",
+    "test:backend": "powershell -ExecutionPolicy Bypass -File scripts/test-backend.ps1",
+    "test": "npm run test:frontend && npm run test:backend"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.8.0",
+    "@tauri-apps/plugin-dialog": "^2.4.0",
+    "lucide-react": "^0.468.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.8.4",
+    "@types/node": "^22.10.2",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^6.0.5",
+    "esbuild": "^0.28.1",
+    "jsdom": "^25.0.1",
+    "typescript": "~5.7.2",
+    "vite": "^8.2.1",
+    "vitest": "^4.1.10"
+  }
+}

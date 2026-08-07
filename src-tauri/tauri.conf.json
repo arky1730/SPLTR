@@ -1,0 +1,51 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "SPLTR",
+  "version": "0.1.0",
+  "identifier": "app.spltr.desktop",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "SPLTR — AI Vocal Separator",
+        "width": 1280,
+        "height": 790,
+        "minWidth": 920,
+        "minHeight": 620,
+        "center": true,
+        "resizable": true,
+        "fullscreen": false,
+        "dragDropEnabled": true,
+        "backgroundColor": "#0b0b0d"
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src ipc: http://ipc.localhost"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "createUpdaterArtifacts": false,
+    "resources": {
+      "resources/python/": "python/",
+      "resources/ffmpeg/": "ffmpeg/",
+      "../python/bootstrap.py": "backend/bootstrap.py",
+      "../python/requirements-runtime.txt": "backend/requirements-runtime.txt",
+      "../python/spltr_backend/": "backend/spltr_backend/"
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "displayLanguageSelector": false
+      }
+    },
+    "shortDescription": "Private, local AI vocal separation",
+    "longDescription": "Separate vocals and instrumentals locally with Demucs. No audio uploads."
+  }
+}

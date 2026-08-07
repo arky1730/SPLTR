@@ -1,0 +1,15 @@
+node_modules/
+.npm-cache/
+.test-deps/
+dist/
+src-tauri/target/
+src-tauri/resources/python/
+src-tauri/resources/ffmpeg/
+python/.pytest_cache/
+python/**/__pycache__/
+*.pyc
+*.pyo
+*.tsbuildinfo
+.venv/
+build/
+release/
