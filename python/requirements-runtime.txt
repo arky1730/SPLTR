@@ -1,3 +1,4 @@
 # Installed into AppData on first launch; Torch is selected separately for CUDA/CPU.
-demucs==4.0.1
-
+# 4.1.0 ships a Python wheel. 4.0.1 is source-only and cannot be built reliably
+# by the Windows embeddable Python runtime used by the packaged application.
+demucs==4.1.0

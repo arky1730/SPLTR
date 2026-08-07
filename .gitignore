@@ -13,3 +13,4 @@ python/**/__pycache__/
 .venv/
 build/
 release/
+.diagnostics/

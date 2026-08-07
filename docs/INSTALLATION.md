@@ -10,12 +10,14 @@
 
 ## Install
 
-1. Run the `SPLTR_*_x64-setup.exe` installer.
-2. Keep the default per-user install location. Administrator access is not required.
-3. Open SPLTR. It downloads the appropriate local Torch runtime and the selected Demucs model once.
-4. After setup, separation works offline with cached models.
+Choose one package from the latest GitHub release:
 
-Runtime files are stored under `%LOCALAPPDATA%\app.spltr.desktop`:
+- **Installer:** run `SPLTR_*_x64-setup.exe`. Keep the default per-user install location; administrator access is not required.
+- **Portable:** extract all files from `SPLTR_*_x64-portable.zip`, keep the folder together, and run `SPLTR.exe`.
+
+Open SPLTR while connected to the internet. It downloads the appropriate local Torch runtime and selected Demucs model once. After setup, separation works offline with cached models.
+
+Runtime files are stored under `%APPDATA%\app.spltr.desktop`:
 
 - `models` — downloaded Demucs checkpoints
 - `runtime` — Torch and Demucs Python packages
@@ -38,5 +40,5 @@ For `song.mp3`, SPLTR creates `song_vocals.wav` and `song_instrumental.wav`. Exi
 - **Corrupted audio:** try opening or re-exporting the source in an audio editor. The queue continues after a failed file.
 - **Download failed:** check the connection and firewall, then select Retry. Partial package downloads can be retried safely.
 - **Model cache problem:** when idle, use Settings → Delete cached models and let SPLTR download the model again.
-- **Debugging:** attach `%LOCALAPPDATA%\app.spltr.desktop\logs\spltr.log`. Logs contain technical errors and paths but never audio content.
-
+- **Runtime setup failure:** open `%APPDATA%\app.spltr.desktop\logs\runtime-install.log` for the exact package-install error.
+- **Debugging:** attach `%APPDATA%\app.spltr.desktop\logs\spltr.log`. Logs contain technical errors and paths but never audio content.

@@ -25,7 +25,7 @@ SPLTR opens source audio locally and writes stems locally. The only network requ
 
 ## Install
 
-Download the NSIS `.exe` from a GitHub Actions build artifact or a release, then run it. Installation is per-user and does not require administrator privileges. The first separation requires an internet connection while the local AI engine and selected model are cached. See [Installation](docs/INSTALLATION.md).
+Download either the NSIS `.exe` installer or the portable `.zip` from the [latest release](https://github.com/arky1730/SPLTR/releases/latest). Installation is per-user and does not require administrator privileges; the portable build only needs to be extracted. The first separation requires an internet connection while the local AI engine and selected model are cached. See [Installation](docs/INSTALLATION.md).
 
 ## Development
 

@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "spltr-backend"
-version = "0.1.0"
+version = "0.1.1"
 description = "Local Demucs processing backend for SPLTR"
 requires-python = ">=3.12"
-dependencies = ["demucs==4.0.1"]
+dependencies = ["demucs==4.1.0"]
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -28,4 +28,3 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 python_version = "3.12"
 strict = true
 packages = ["spltr_backend"]
-

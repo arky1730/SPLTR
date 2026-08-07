@@ -17,7 +17,7 @@ The NSIS configuration uses `currentUser`, so the installer does not request adm
 
 ## CI
 
-`.github/workflows/windows-build.yml` installs Node, Rust, and Python; runs tests; prepares resources; builds NSIS; and uploads the installer artifact. Pushes to `main`/`master`, pull requests, and manual dispatch trigger the workflow.
+`.github/workflows/windows-build.yml` installs Node, Rust, and Python; runs tests; prepares resources; builds NSIS plus a portable ZIP; and uploads both artifacts. For non-PR builds, it also creates or updates the versioned GitHub Release. Pushes to `main`/`master`, pull requests, and manual dispatch trigger the workflow.
 
 ## Signing
 
@@ -31,4 +31,3 @@ The included workflow produces an unsigned installer. For distribution, add a co
 4. Install as a standard user on clean Windows 10 and 11 VMs.
 5. Verify first-run runtime/model retry, offline cached use, cache deletion, output collision handling, and uninstall.
 6. Sign binaries, publish checksums, and retain third-party license notices.
-

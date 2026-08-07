@@ -1,0 +1,11 @@
+SPLTR Portable for Windows 10/11
+
+1. Extract the entire ZIP file to a folder.
+2. Run SPLTR.exe. Do not move the EXE out of the extracted folder.
+3. On first launch, keep the internet connected while the local AI runtime and model download.
+4. Audio is processed locally and is never uploaded.
+
+If Windows SmartScreen appears, choose More info, then Run anyway.
+
+For setup failures, see:
+%APPDATA%\app.spltr.desktop\logs\runtime-install.log
