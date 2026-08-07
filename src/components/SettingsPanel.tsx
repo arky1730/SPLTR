@@ -47,6 +47,7 @@ export function SettingsPanel({ open, settings, device, onChange, onClose, onCho
           <label>Output</label>
           <div className="segmented"><button className={settings.outputMode === "source" ? "active" : ""} onClick={() => patch("outputMode", "source")}>Beside source</button><button className={settings.outputMode === "custom" ? "active" : ""} onClick={() => patch("outputMode", "custom")}>Custom folder</button></div>
           {settings.outputMode === "custom" && <button className="folder-field" onClick={onChooseFolder}><FolderOpen size={16} /><span>{settings.outputFolder ?? "Choose a folder"}</span></button>}
+          <p className="setting-note">{settings.outputMode === "source" ? "Default · saves beside each original audio file." : "All separated files are saved in the selected folder."}</p>
         </section>
         <section className="settings-section">
           <label>Parallel jobs</label>
@@ -66,4 +67,3 @@ export function SettingsPanel({ open, settings, device, onChange, onClose, onCho
     </aside>
   );
 }
-

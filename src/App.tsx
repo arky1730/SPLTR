@@ -150,7 +150,7 @@ export default function App() {
           <div className="quick-settings">
             <button onClick={() => setSettingsOpen(true)}><Zap size={16} /><span><small>Model</small><strong>{modelLabel}</strong></span></button>
             <button onClick={() => setSettingsOpen(true)}><Gauge size={16} /><span><small>Device</small><strong>{device?.type === "cuda" ? device.name.replace("NVIDIA GeForce ", "") : device?.name ?? "Detecting…"}</strong></span></button>
-            <button onClick={() => void chooseFolder()}><FolderOutput size={16} /><span><small>Output</small><strong>{outputLabel}</strong></span></button>
+            <button onClick={() => setSettingsOpen(true)}><FolderOutput size={16} /><span><small>Output</small><strong>{outputLabel}</strong></span></button>
           </div>
         </section>
 
@@ -172,7 +172,7 @@ export default function App() {
             <div><span>{items.length ? `${completed} of ${items.length} completed` : "Add audio to begin"}</span><small>Creates *_vocals.wav and *_instrumental.wav</small></div>
             {processing ? <button className="stop-button" onClick={stopQueue}><Square size={14} /> Stop</button> : <button className="primary-button" disabled={!canStart} onClick={startQueue}><Play size={16} fill="currentColor" /> Separate {canStart ? `${items.filter((item) => item.status !== "completed").length} track${items.filter((item) => item.status !== "completed").length === 1 ? "" : "s"}` : ""}</button>}
           </div>
-          <ResultPlayer item={selectedResult} onReveal={(path) => void revealInFolder(path)} />
+          <ResultPlayer item={selectedResult} disabled={processing} onReveal={(path) => void revealInFolder(path)} onNotice={setNotice} />
         </section>
       </main>
 

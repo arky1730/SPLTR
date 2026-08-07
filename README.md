@@ -14,6 +14,8 @@ SPLTR is a focused Windows desktop app for separating vocals from music with Dem
 - MP3, WAV, FLAC, M4A, AIFF, and OGG input
 - Vocals and instrumental WAV output with collision-safe names
 - Built-in result monitor for switching between the original, vocals, and instrumental
+- Real audio waveforms with click-and-drag seeking
+- Optional start/end trimming and 854×480 black-screen vocal MP4 export
 - One-click shortcuts to reveal completed stems in File Explorer
 - `htdemucs`, `htdemucs_ft`, and `mdx_extra`
 - NVIDIA CUDA detection with automatic CPU fallback

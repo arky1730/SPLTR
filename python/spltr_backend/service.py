@@ -15,6 +15,7 @@ from .audio import decodable_audio
 from .device import detect_device
 from .errors import ProcessingError
 from .logging_setup import configure_logging
+from .media_tools import MediaToolError, export_black_video, extract_waveform
 from .models import DemucsModel, SeparationModel, StemOutputs
 from .naming import available_stem_paths
 from .protocol import EventWriter, parse_command
@@ -33,8 +34,11 @@ class SeparationService:
         self.cancel = threading.Event()
         self.queue_thread: threading.Thread | None = None
         self.download_thread: threading.Thread | None = None
+        self.export_thread: threading.Thread | None = None
         self.shutdown = threading.Event()
         self._settings_lock = threading.Lock()
+        self._waveform_cache: dict[str, list[float]] = {}
+        self._waveform_lock = threading.Lock()
         self.logger = configure_logging(app_data / "logs")
 
     def start(self) -> None:
@@ -61,6 +65,15 @@ class SeparationService:
             self.logger.info("Queue cancellation requested")
         elif kind == "delete_models":
             self.delete_models()
+        elif kind == "waveform":
+            self.request_waveform(str(command.get("requestId", "")), str(command.get("path", "")))
+        elif kind == "export_video":
+            self.start_video_export(
+                str(command.get("requestId", "")),
+                str(command.get("path", "")),
+                command.get("startSeconds", 0),
+                command.get("endSeconds"),
+            )
         elif kind == "shutdown":
             self.cancel.set()
             self.shutdown.set()
@@ -284,6 +297,81 @@ class SeparationService:
                 "error", code="cache_delete_failed",
                 message=f"Could not delete cached models: {exc}", recoverable=True,
             )
+
+    def request_waveform(self, request_id: str, raw_path: str) -> None:
+        if not request_id or not raw_path:
+            raise ValueError("Waveform requests require a requestId and path")
+        with self._waveform_lock:
+            cached = self._waveform_cache.get(raw_path)
+        if cached is not None:
+            self.writer.emit("waveform", requestId=request_id, path=raw_path, peaks=cached)
+            return
+
+        def generate() -> None:
+            try:
+                peaks = extract_waveform(self.ffmpeg, Path(raw_path))
+                with self._waveform_lock:
+                    self._waveform_cache[raw_path] = peaks
+                self.writer.emit("waveform", requestId=request_id, path=raw_path, peaks=peaks)
+            except MediaToolError as exc:
+                self.logger.warning("Waveform generation failed for %s: %s", raw_path, exc)
+                self.writer.emit(
+                    "waveform", requestId=request_id, path=raw_path, peaks=[], message=str(exc)
+                )
+            except Exception:
+                self.logger.exception("Unexpected waveform failure for %s", raw_path)
+                self.writer.emit(
+                    "waveform", requestId=request_id, path=raw_path, peaks=[],
+                    message="Could not generate the audio waveform.",
+                )
+
+        threading.Thread(target=generate, name="waveform", daemon=True).start()
+
+    def start_video_export(
+        self,
+        request_id: str,
+        raw_path: str,
+        raw_start: object,
+        raw_end: object,
+    ) -> None:
+        if not request_id or not raw_path:
+            raise ValueError("Video export requires a requestId and path")
+        if self.export_thread and self.export_thread.is_alive():
+            self.writer.emit(
+                "export_video", requestId=request_id, state="failed",
+                message="Another MP4 export is already running.",
+            )
+            return
+        try:
+            start_seconds = float(raw_start)
+            end_seconds = None if raw_end is None else float(raw_end)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Video export times must be numbers") from exc
+
+        def export() -> None:
+            self.writer.emit("export_video", requestId=request_id, state="started")
+            try:
+                output = export_black_video(
+                    self.ffmpeg, Path(raw_path), start_seconds=start_seconds, end_seconds=end_seconds
+                )
+                self.writer.emit(
+                    "export_video", requestId=request_id, state="completed", path=str(output)
+                )
+                self.logger.info("Exported 480p vocal video to %s", output)
+            except MediaToolError as exc:
+                self.logger.warning("Video export failed for %s: %s", raw_path, exc)
+                self.writer.emit(
+                    "export_video", requestId=request_id, state="failed", message=str(exc)
+                )
+            except Exception:
+                self.logger.exception("Unexpected video export failure for %s", raw_path)
+                self.writer.emit(
+                    "export_video", requestId=request_id, state="failed",
+                    message="An unexpected error stopped the MP4 export.",
+                )
+
+        self.export_thread = threading.Thread(target=export, name="video-export", daemon=True)
+        self.export_thread.start()
 
     def _model_cached(self, model_name: str) -> bool:
         return (self.models_dir / f"{model_name}.ready").exists()

@@ -24,6 +24,8 @@ Commands include `configure`, `scan`, `ensure_model`, `start_queue`, `cancel_que
 
 Completed queue items expose their original path and paired stem output paths to the React result monitor. Tauri's scoped asset protocol lets the webview play these local files directly, while the `reveal_in_folder` command opens File Explorer with the selected output highlighted.
 
+Waveforms are reduced to a small peak array by asking bundled FFmpeg for low-rate mono float PCM; full audio is never loaded into the React process. Video export uses the same FFmpeg binary to combine the vocal WAV with an 854×480 black color source, optionally applying a start/end range. Both utilities run on background threads and report results through the existing JSON event protocol.
+
 ## First launch and installer size
 
 CUDA Torch cannot fit in a 120 MB installer. SPLTR bundles the official Windows embeddable Python distribution and FFmpeg, then installs Torch, Torchaudio, and Demucs into AppData at first launch. GPU presence is checked with `nvidia-smi`: CUDA 12.1 wheels are selected for NVIDIA systems and CPU wheels otherwise. Models remain separate and are downloaded by Demucs into the AppData model cache.

@@ -41,6 +41,8 @@ export type BackendEvent =
   | { type: "queue_complete" }
   | { type: "model_download"; model: ModelName; state: "started" | "progress" | "completed" | "failed"; progress: number; message?: string }
   | { type: "runtime_download"; state: "started" | "progress" | "completed" | "failed"; progress: number; message?: string }
+  | { type: "waveform"; requestId: string; path: string; peaks: number[]; message?: string }
+  | { type: "export_video"; requestId: string; state: "started" | "completed" | "failed"; path?: string; message?: string }
   | { type: "cache_cleared" }
   | { type: "error"; code: string; message: string; recoverable: boolean };
 
@@ -51,5 +53,6 @@ export type BackendCommand =
   | { type: "cancel_queue" }
   | { type: "ensure_model"; model: ModelName }
   | { type: "delete_models" }
+  | { type: "waveform"; requestId: string; path: string }
+  | { type: "export_video"; requestId: string; path: string; startSeconds: number; endSeconds: number | null }
   | { type: "shutdown" };
-

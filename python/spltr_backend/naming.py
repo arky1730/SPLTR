@@ -15,3 +15,14 @@ def available_stem_paths(source: Path, output_dir: Path) -> tuple[Path, Path]:
             return vocals, instrumental
         suffix += 1
 
+
+def available_video_path(vocals: Path, clipped: bool) -> Path:
+    """Return a non-colliding MP4 path beside a vocal stem."""
+    base = f"{vocals.stem}{'_clip' if clipped else ''}"
+    suffix = 0
+    while True:
+        marker = "" if suffix == 0 else f" ({suffix})"
+        output = vocals.parent / f"{base}{marker}.mp4"
+        if not output.exists():
+            return output
+        suffix += 1
