@@ -26,6 +26,8 @@ Completed queue items expose their original path and paired stem output paths to
 
 Waveforms are reduced to a compact high-density peak array by asking bundled FFmpeg for low-rate mono float PCM; full audio is never loaded into the React process. The editor stores a source range inside a fixed-duration output frame. Trimming adjusts the source range and converts the remaining frame space into leading or trailing silence; moving the output block only redistributes that silence, while moving the source strip changes the source range. Independent fade handles are constrained to the audible block.
 
+The clip editor maintains an output-relative playhead separately from the source audio element's time. Audible output positions map to the selected source range, while silence positions have no source time. Preview uses a short UI interval during silence and the audio element during audible content, so the same clip playhead advances continuously across both regions and can start from any scrubbed position.
+
 Audio export uses FFmpeg to create 24-bit WAV or 320 kbps MP3 clips. Video export combines the selected track with an 854×480 black color source. Both exporters trim the source first, apply independent fades, delay it by the leading-silence amount, pad it to the fixed output duration, and finally trim to that duration. The same timeline therefore produces matching WAV, MP3, and MP4 lengths. Exports follow the configured destination, use collision-safe names, and run on a background thread.
 
 ## First launch and installer size

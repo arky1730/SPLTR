@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { adjustWaveformPeaks, clipRangeForPreset, fixedOutputDuration, formatPlayerTime, parseClipRange } from "./ResultPlayer";
+import { adjustWaveformPeaks, clipRangeForPreset, fixedOutputDuration, formatPlayerTime, parseClipRange, sourceTimeForClipPosition } from "./ResultPlayer";
 
 describe("formatPlayerTime", () => {
   it("formats transport time without decimals", () => {
@@ -61,5 +61,13 @@ describe("fixedOutputDuration", () => {
       silenceBefore: 0.1,
       silenceAfter: 0.5,
     })).toBeCloseTo(15, 6);
+  });
+
+  it("maps the clip playhead through silence and audible source time", () => {
+    const layout = { sourceStart: 10, sourceEnd: 24, silenceBefore: 0.25, silenceAfter: 0.75 };
+    expect(sourceTimeForClipPosition(0.1, layout)).toBeNull();
+    expect(sourceTimeForClipPosition(0.25, layout)).toBe(10);
+    expect(sourceTimeForClipPosition(7.25, layout)).toBe(17);
+    expect(sourceTimeForClipPosition(14.5, layout)).toBeNull();
   });
 });

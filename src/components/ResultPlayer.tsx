@@ -40,6 +40,13 @@ export function fixedOutputDuration(layout: FixedClipLayout): number {
   return layout.silenceBefore + Math.max(0, layout.sourceEnd - layout.sourceStart) + layout.silenceAfter;
 }
 
+export function sourceTimeForClipPosition(position: number, layout: FixedClipLayout): number | null {
+  const audioDuration = Math.max(0, layout.sourceEnd - layout.sourceStart);
+  const audioPosition = position - layout.silenceBefore;
+  if (audioPosition < 0 || audioPosition > audioDuration) return null;
+  return layout.sourceStart + audioPosition;
+}
+
 export function adjustWaveformPeaks(peaks: number[], gain: WaveformGain): number[] {
   return peaks.map((peak) => {
     const safePeak = Math.min(1, Math.max(0, peak));
@@ -133,7 +140,7 @@ function WaveformTimeline({ peaks, loading, currentTime, duration, displayGain, 
 interface ClipRangeEditorProps {
   peaks: number[];
   loading: boolean;
-  currentTime: number;
+  clipPosition: number;
   duration: number;
   layout: FixedClipLayout;
   outputDuration: number;
@@ -152,6 +159,7 @@ interface ClipRangeEditorProps {
   exportedVideoPath: string | null;
   onLayoutChange: (layout: FixedClipLayout) => void;
   onSeek: (seconds: number) => void;
+  onClipSeek: (seconds: number) => void;
   onPreview: () => void;
   onReset: () => void;
   onStartInput: (value: string) => void;
@@ -171,7 +179,7 @@ type DragTarget = "audio-start" | "audio-end" | "audio-block" | "source-block" |
 function ClipRangeEditor({
   peaks,
   loading,
-  currentTime,
+  clipPosition,
   duration,
   layout,
   outputDuration,
@@ -190,6 +198,7 @@ function ClipRangeEditor({
   exportedVideoPath,
   onLayoutChange,
   onSeek,
+  onClipSeek,
   onPreview,
   onReset,
   onStartInput,
@@ -221,10 +230,8 @@ function ClipRangeEditor({
   const contentPercent = contentDuration / safeOutputDuration * 100;
   const sourceStartPercent = safeDuration > 0 ? layout.sourceStart / safeDuration * 100 : 0;
   const sourceEndPercent = safeDuration > 0 ? layout.sourceEnd / safeDuration * 100 : 0;
-  const playheadOutput = audioStart + currentTime - layout.sourceStart;
-  const playheadPercent = playheadOutput >= audioStart && playheadOutput <= audioEnd
-    ? playheadOutput / safeOutputDuration * 100
-    : -1;
+  const safeClipPosition = Math.min(safeOutputDuration, Math.max(0, clipPosition));
+  const playheadPercent = safeClipPosition / safeOutputDuration * 100;
 
   useEffect(() => {
     const viewport = scrollRef.current;
@@ -340,10 +347,7 @@ function ClipRangeEditor({
 
   function seekFromOutput(event: ReactPointerEvent<HTMLDivElement>) {
     if ((event.target as HTMLElement).closest("[data-trim-control]")) return;
-    const outputTime = outputTimeAt(event.clientX);
-    if (outputTime >= audioStart && outputTime <= audioEnd) {
-      onSeek(layout.sourceStart + outputTime - audioStart);
-    }
+    onClipSeek(outputTimeAt(event.clientX));
   }
 
   function setSilenceBefore(value: number) {
@@ -356,6 +360,14 @@ function ClipRangeEditor({
     const next = Math.min(safeOutputDuration - audioStart - MIN_AUDIO_SECONDS, Math.max(Math.max(0, layout.sourceEnd - safeDuration + layout.silenceAfter), value));
     const delta = next - layout.silenceAfter;
     onLayoutChange({ ...layout, sourceEnd: layout.sourceEnd - delta, silenceAfter: next });
+  }
+
+  function addLeadingSilence() {
+    setSilenceBefore(layout.silenceBefore + 0.1);
+  }
+
+  function addTrailingSilence() {
+    setSilenceAfter(layout.silenceAfter + 0.1);
   }
 
   return (
@@ -444,8 +456,16 @@ function ClipRangeEditor({
         {fadeOutSeconds > 0 && <div className="fade-shade fade-shade-out" style={{ left: `${(audioEnd - fadeOutSeconds) / safeOutputDuration * 100}%`, width: `${fadeOutSeconds / safeOutputDuration * 100}%` }} />}
         <button className="fade-handle fade-in-handle" data-trim-control aria-label="Drag fade in" style={{ left: `${(audioStart + fadeInSeconds) / safeOutputDuration * 100}%` }} onPointerDown={(event) => beginDrag("fade-in", event)} onPointerMove={continueDrag} onPointerUp={endDrag} onPointerCancel={endDrag}><span>FADE IN</span></button>
         <button className="fade-handle fade-out-handle" data-trim-control aria-label="Drag fade out" style={{ left: `${(audioEnd - fadeOutSeconds) / safeOutputDuration * 100}%` }} onPointerDown={(event) => beginDrag("fade-out", event)} onPointerMove={continueDrag} onPointerUp={endDrag} onPointerCancel={endDrag}><span>FADE OUT</span></button>
-        {playheadPercent >= 0 && <div className="clip-playhead" style={{ left: `${playheadPercent}%` }} />}
+        <div className="clip-playhead" style={{ left: `${playheadPercent}%` }}><i /></div>
       </div>
+      </div>
+
+      <div className="clip-scrub-row">
+        <button type="button" className="silence-add" disabled={contentDuration <= MIN_AUDIO_SECONDS} onClick={addLeadingSilence}>+ Lead silence</button>
+        <span className="clip-scrub-time">{preciseTime(safeClipPosition)}</span>
+        <input type="range" min="0" max={safeOutputDuration} step="0.01" value={safeClipPosition} onChange={(event) => onClipSeek(Number(event.target.value))} aria-label="Clip playback position" />
+        <span className="clip-scrub-time">{preciseTime(safeOutputDuration)}</span>
+        <button type="button" className="silence-add" disabled={contentDuration <= MIN_AUDIO_SECONDS} onClick={addTrailingSilence}>+ End silence</button>
       </div>
 
       <div className="source-strip-wrap">
@@ -537,6 +557,7 @@ export function ResultPlayer({ item, disabled, onReveal, onNotice }: ResultPlaye
   const [clipEnd, setClipEnd] = useState("");
   const [presetSeconds, setPresetSeconds] = useState(15);
   const [previewingClip, setPreviewingClip] = useState(false);
+  const [clipPosition, setClipPosition] = useState(0);
   const [silenceBefore, setSilenceBefore] = useState(0);
   const [silenceAfter, setSilenceAfter] = useState(0);
   const [fadeInSeconds, setFadeInSeconds] = useState(0.05);
@@ -593,7 +614,7 @@ export function ResultPlayer({ item, disabled, onReveal, onNotice }: ResultPlaye
   }), [audioFormat, onNotice]);
 
   useEffect(() => {
-    if (previewTimerRef.current !== null) window.clearTimeout(previewTimerRef.current);
+    if (previewTimerRef.current !== null) window.clearInterval(previewTimerRef.current);
     previewTimerRef.current = null;
     resumeTimeRef.current = 0;
     resumePlaybackRef.current = false;
@@ -607,6 +628,7 @@ export function ResultPlayer({ item, disabled, onReveal, onNotice }: ResultPlaye
     setClipEnd("");
     clipInitializedRef.current = false;
     setPresetSeconds(15);
+    setClipPosition(0);
     setSilenceBefore(0);
     setSilenceAfter(0);
     setFadeInSeconds(0.05);
@@ -620,7 +642,7 @@ export function ResultPlayer({ item, disabled, onReveal, onNotice }: ResultPlaye
   }, [item?.id]);
 
   useEffect(() => () => {
-    if (previewTimerRef.current !== null) window.clearTimeout(previewTimerRef.current);
+    if (previewTimerRef.current !== null) window.clearInterval(previewTimerRef.current);
   }, []);
 
   useEffect(() => {
@@ -705,14 +727,15 @@ export function ResultPlayer({ item, disabled, onReveal, onNotice }: ResultPlaye
       const fadeOutGain = fadeOutSeconds > 0
         ? Math.min(1, Math.max(0, (previewRange.end - nextTime) / fadeOutSeconds)) : 1;
       audio.volume = volume * Math.min(fadeInGain, fadeOutGain);
+      setClipPosition(Math.min(presetSeconds - silenceAfter, silenceBefore + nextTime - previewRange.start));
       if (nextTime >= previewRange.end) {
         audio.pause();
         audio.volume = volume;
-        audio.currentTime = previewRange.start;
-        setCurrentTime(previewRange.start);
+        audio.currentTime = previewRange.end;
+        setCurrentTime(previewRange.end);
         clipPreviewRangeRef.current = null;
         if (silenceAfter > 0) {
-          previewTimerRef.current = window.setTimeout(() => finishClipPreview(), silenceAfter * 1000);
+          playSilence(presetSeconds - silenceAfter, presetSeconds, finishClipPreview);
         } else finishClipPreview();
         return;
       }
@@ -726,6 +749,24 @@ export function ResultPlayer({ item, disabled, onReveal, onNotice }: ResultPlaye
     if (previewingClip) cancelClipPreview();
     audio.currentTime = value;
     setCurrentTime(value);
+  }
+
+  function seekClip(value: number) {
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (previewingClip) cancelClipPreview();
+    const nextPosition = Math.min(presetSeconds, Math.max(0, value));
+    setClipPosition(nextPosition);
+    audio.pause();
+    const sourceTime = sourceTimeForClipPosition(nextPosition, clipLayout);
+    if (sourceTime === null) {
+      const boundary = nextPosition < silenceBefore ? clipRange.start : clipRange.end;
+      audio.currentTime = boundary;
+      setCurrentTime(boundary);
+      return;
+    }
+    audio.currentTime = sourceTime;
+    setCurrentTime(sourceTime);
   }
 
   function changeVolume(value: number) {
@@ -777,9 +818,11 @@ export function ResultPlayer({ item, disabled, onReveal, onNotice }: ResultPlaye
     setSilenceAfter(Math.max(0, presetSeconds - (range.end - range.start)));
     setFadeInSeconds(0.05);
     setFadeOutSeconds(0.05);
+    setClipPosition(0);
   }
 
   function applyPresetSeconds(seconds: number) {
+    if (previewingClip) cancelClipPreview();
     setPresetSeconds(seconds);
     const range = clipRangeForPreset(clipRange.start, seconds, duration);
     setClipStart(inputTime(range.start));
@@ -788,6 +831,7 @@ export function ResultPlayer({ item, disabled, onReveal, onNotice }: ResultPlaye
     setSilenceAfter(Math.max(0, seconds - (range.end - range.start)));
     setFadeInSeconds((value) => Math.min(value, (range.end - range.start) / 2));
     setFadeOutSeconds((value) => Math.min(value, (range.end - range.start) / 2));
+    setClipPosition(0);
   }
 
   function changeSourceStart(value: string) {
@@ -833,22 +877,35 @@ export function ResultPlayer({ item, disabled, onReveal, onNotice }: ResultPlaye
       cancelClipPreview();
       return;
     }
+    const startPosition = clipPosition >= presetSeconds ? 0 : clipPosition;
+    const audioEndPosition = presetSeconds - silenceAfter;
     resumeTimeRef.current = range.start;
     setPreviewingClip(true);
+    setClipPosition(startPosition);
     audio.pause();
-    audio.currentTime = range.start;
-    setCurrentTime(range.start);
-    if (silenceBefore > 0) {
-      previewTimerRef.current = window.setTimeout(() => void startClipAudio(audio, range), silenceBefore * 1000);
+    if (startPosition < silenceBefore) {
+      audio.currentTime = range.start;
+      setCurrentTime(range.start);
+      playSilence(startPosition, silenceBefore, () => void startClipAudio(audio, range, range.start));
       return;
     }
-    await startClipAudio(audio, range);
+    if (startPosition < audioEndPosition) {
+      await startClipAudio(audio, range, range.start + startPosition - silenceBefore);
+      return;
+    }
+    audio.currentTime = range.end;
+    setCurrentTime(range.end);
+    playSilence(startPosition, presetSeconds, finishClipPreview);
   }
 
-  async function startClipAudio(audio: HTMLAudioElement, range: { start: number; end: number }) {
+  async function startClipAudio(audio: HTMLAudioElement, range: { start: number; end: number }, sourceTime: number) {
     previewTimerRef.current = null;
     clipPreviewRangeRef.current = range;
-    audio.volume = fadeInSeconds > 0 ? 0 : volume;
+    audio.currentTime = sourceTime;
+    setCurrentTime(sourceTime);
+    const fadeInGain = fadeInSeconds > 0 ? Math.min(1, Math.max(0, (sourceTime - range.start) / fadeInSeconds)) : 1;
+    const fadeOutGain = fadeOutSeconds > 0 ? Math.min(1, Math.max(0, (range.end - sourceTime) / fadeOutSeconds)) : 1;
+    audio.volume = volume * Math.min(fadeInGain, fadeOutGain);
     try {
       await audio.play();
     } catch {
@@ -863,8 +920,28 @@ export function ResultPlayer({ item, disabled, onReveal, onNotice }: ResultPlaye
     setPreviewingClip(false);
   }
 
+  function playSilence(from: number, to: number, onComplete: () => void) {
+    if (previewTimerRef.current !== null) window.clearInterval(previewTimerRef.current);
+    if (to <= from) {
+      setClipPosition(to);
+      onComplete();
+      return;
+    }
+    const startedAt = performance.now();
+    setClipPosition(from);
+    previewTimerRef.current = window.setInterval(() => {
+      const next = Math.min(to, from + (performance.now() - startedAt) / 1000);
+      setClipPosition(next);
+      if (next >= to) {
+        if (previewTimerRef.current !== null) window.clearInterval(previewTimerRef.current);
+        previewTimerRef.current = null;
+        onComplete();
+      }
+    }, 30);
+  }
+
   function cancelClipPreview(pauseAudio = true) {
-    if (previewTimerRef.current !== null) window.clearTimeout(previewTimerRef.current);
+    if (previewTimerRef.current !== null) window.clearInterval(previewTimerRef.current);
     previewTimerRef.current = null;
     clipPreviewRangeRef.current = null;
     const audio = audioRef.current;
@@ -880,11 +957,11 @@ export function ResultPlayer({ item, disabled, onReveal, onNotice }: ResultPlaye
     const range = clipPreviewRangeRef.current;
     audio.volume = volume;
     if (!range) return;
-    audio.currentTime = range.start;
-    setCurrentTime(range.start);
+    audio.currentTime = range.end;
+    setCurrentTime(range.end);
     clipPreviewRangeRef.current = null;
     if (silenceAfter > 0) {
-      previewTimerRef.current = window.setTimeout(() => finishClipPreview(), silenceAfter * 1000);
+      playSilence(presetSeconds - silenceAfter, presetSeconds, finishClipPreview);
     } else finishClipPreview();
   }
 
@@ -1011,7 +1088,7 @@ export function ResultPlayer({ item, disabled, onReveal, onNotice }: ResultPlaye
       <ClipRangeEditor
         peaks={waveform}
         loading={waveformLoading}
-        currentTime={currentTime}
+        clipPosition={clipPosition}
         duration={duration}
         layout={clipLayout}
         outputDuration={presetSeconds}
@@ -1030,6 +1107,7 @@ export function ResultPlayer({ item, disabled, onReveal, onNotice }: ResultPlaye
         exportedVideoPath={exportedVideoPath}
         onLayoutChange={setClipLayout}
         onSeek={seek}
+        onClipSeek={seekClip}
         onPreview={() => void previewClip()}
         onReset={resetClip}
         onStartInput={changeSourceStart}

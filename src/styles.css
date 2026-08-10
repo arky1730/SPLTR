@@ -220,10 +220,10 @@ button:focus-visible, [role="button"]:focus-visible { outline: 2px solid var(--a
 .clip-range-timeline.loading svg { opacity: .36; animation: waveform-pulse 1.1s ease-in-out infinite alternate; }
 .output-ruler { position: absolute; z-index: 8; top: 0; left: 2px; right: 2px; height: 18px; display: flex; align-items: center; justify-content: space-between; color: var(--muted-2); font-size: 7px; font-variant-numeric: tabular-nums; pointer-events: none; }
 .output-ruler strong { color: var(--accent-2); font-size: 7px; letter-spacing: .65px; }
-.silence-region { position: absolute; z-index: 1; top: 18px; bottom: 1px; overflow: hidden; background: repeating-linear-gradient(135deg, rgba(255,255,255,.025) 0 6px, rgba(255,255,255,.065) 6px 7px); pointer-events: none; }
+.silence-region { position: absolute; z-index: 1; top: 18px; bottom: 1px; overflow: hidden; background: repeating-linear-gradient(135deg, rgba(112,221,179,.055) 0 6px, rgba(112,221,179,.18) 6px 8px); box-shadow: inset 0 0 0 1px rgba(112,221,179,.24); pointer-events: none; }
 .silence-before { left: 0; border-radius: 8px 0 0 8px; }
 .silence-after { right: 0; border-radius: 0 8px 8px 0; }
-.silence-region span { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); white-space: nowrap; color: var(--muted-2); font-size: 7px; letter-spacing: .45px; }
+.silence-region span { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); white-space: nowrap; color: var(--success); font-size: 7px; font-weight: 700; letter-spacing: .45px; }
 .clip-selection-drag { position: absolute; z-index: 3; top: 18px; bottom: 1px; border: 1px solid rgba(185,149,255,.38); background: linear-gradient(180deg, rgba(139,92,246,.14), rgba(139,92,246,.055)); cursor: grab; padding: 0; touch-action: none; }
 .clip-selection-drag:active { cursor: grabbing; background: rgba(139,92,246,.18); }
 .clip-handle { position: absolute; z-index: 9; top: 13px; width: 24px; height: 76px; transform: translateX(-50%); border: 0; background: transparent; color: white; cursor: ew-resize; padding: 0; touch-action: none; }
@@ -237,7 +237,14 @@ button:focus-visible, [role="button"]:focus-visible { outline: 2px solid var(--a
 .fade-handle::after { content: ""; position: absolute; width: 1px; height: 33px; left: 50%; top: 22px; background: rgba(112,221,179,.55); }
 .fade-handle span { display: none; }
 .fade-handle:hover span { display: block; position: absolute; top: -15px; left: 50%; transform: translateX(-50%); padding: 2px 4px; border-radius: 3px; background: #0b1914; color: var(--success); font-size: 6px; white-space: nowrap; }
-.clip-playhead { position: absolute; z-index: 7; top: 18px; bottom: 1px; width: 1px; transform: translateX(-50%); background: rgba(255,255,255,.82); box-shadow: 0 0 5px rgba(255,255,255,.35); pointer-events: none; }
+.clip-playhead { position: absolute; z-index: 11; top: 18px; bottom: 1px; width: 2px; transform: translateX(-50%); background: #fff; box-shadow: 0 0 7px rgba(255,255,255,.55); pointer-events: none; }
+.clip-playhead i { position: absolute; top: -3px; left: 50%; width: 9px; height: 9px; transform: translate(-50%,-35%) rotate(45deg); border-radius: 2px; background: #fff; }
+.clip-scrub-row { height: 31px; display: grid; grid-template-columns: auto 42px minmax(120px, 1fr) 42px auto; align-items: center; gap: 7px; margin: 0 2px 5px; padding: 0 7px; border: 1px solid var(--border); border-radius: 8px; background: rgba(0,0,0,.13); }
+.clip-scrub-row input { width: 100%; height: 4px; accent-color: #fff; cursor: ew-resize; }
+.clip-scrub-time { color: var(--text); font-size: 8px; font-weight: 600; font-variant-numeric: tabular-nums; text-align: center; }
+.silence-add { height: 23px; padding: 0 8px; border: 1px solid rgba(112,221,179,.28); border-radius: 6px; background: rgba(112,221,179,.08); color: var(--success); font-size: 7px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.silence-add:hover:not(:disabled) { background: rgba(112,221,179,.16); border-color: rgba(112,221,179,.48); }
+.silence-add:disabled { opacity: .35; cursor: not-allowed; }
 .source-strip-wrap { display: grid; grid-template-columns: 118px minmax(0, 1fr); align-items: center; gap: 9px; margin: 3px 2px 5px; }
 .source-strip-label { display: flex; flex-direction: column; gap: 2px; }
 .source-strip-label span { color: var(--muted); font-size: 7px; letter-spacing: .65px; }
