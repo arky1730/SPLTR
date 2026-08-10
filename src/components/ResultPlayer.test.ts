@@ -18,6 +18,10 @@ describe("parseClipRange", () => {
     expect(parseClipRange("12.5", "42", 90)).toEqual({ start: 12.5, end: 42 });
   });
 
+  it("keeps hundredth-second precision", () => {
+    expect(parseClipRange("12.34", "15.67", 90)).toEqual({ start: 12.34, end: 15.67 });
+  });
+
   it("rejects reversed and out-of-track ranges", () => {
     expect(parseClipRange("20", "10", 90)).toBeNull();
     expect(parseClipRange("0", "91", 90)).toBeNull();

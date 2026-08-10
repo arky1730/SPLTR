@@ -6,6 +6,7 @@ import pytest
 from spltr_backend.media_tools import (
     build_audio_export_command,
     build_black_video_command,
+    build_export_audio_filter,
     waveform_peaks_from_pcm,
 )
 
@@ -45,3 +46,22 @@ def test_audio_export_command_is_clipped_and_uses_expected_codec(
     assert command[command.index("-t") + 1] == "15.000"
     assert command[command.index("-c:a") + 1] == codec
     assert command[-1] == str(output)
+
+
+def test_export_filter_adds_fades_and_silence_padding() -> None:
+    audio_filter = build_export_audio_filter(15.0, 0.25, 0.5, 0.05)
+    assert "afade=t=in:st=0:d=0.050" in audio_filter
+    assert "afade=t=out:st=14.950:d=0.050" in audio_filter
+    assert "adelay=250:all=1" in audio_filter
+    assert "apad=pad_dur=0.500" in audio_filter
+
+
+def test_black_video_applies_audio_finish_filter() -> None:
+    command = build_black_video_command(
+        Path("ffmpeg.exe"), Path("song_vocals.wav"), Path("song_vocals_clip.mp4"),
+        2.0, 12.0, 10.0, 0.1, 0.25, 0.05,
+    )
+    assert "-af" in command
+    audio_filter = command[command.index("-af") + 1]
+    assert "adelay=100:all=1" in audio_filter
+    assert "apad=pad_dur=0.250" in audio_filter

@@ -95,7 +95,7 @@ class BackendBridge {
       window.setTimeout(() => this.emit({ type: "cache_cleared" }), 250);
     }
     if (command.type === "waveform") {
-      const peaks = Array.from({ length: 220 }, (_, index) => {
+      const peaks = Array.from({ length: 960 }, (_, index) => {
         const envelope = 0.38 + Math.sin(index * 0.071) * 0.22;
         return Math.min(1, Math.abs(Math.sin(index * 0.37)) * envelope + 0.08);
       });

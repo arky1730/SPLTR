@@ -24,7 +24,7 @@ Commands include `configure`, `scan`, `ensure_model`, `start_queue`, `cancel_que
 
 Completed queue items expose their original path and paired stem output paths to the React result monitor. Tauri's scoped asset protocol lets the webview play these local files directly, while the `reveal_in_folder` command opens File Explorer with the selected output highlighted.
 
-Waveforms are reduced to a small peak array by asking bundled FFmpeg for low-rate mono float PCM; full audio is never loaded into the React process. Display gain is a React-only transform over this peak array and never touches audio samples. Audio export uses FFmpeg to create 24-bit WAV or 320 kbps MP3 clips. Video export combines the selected track with an 854×480 black color source. Both exporters accept an optional start/end range, follow the configured destination, use collision-safe names, and run on a background thread.
+Waveforms are reduced to a compact high-density peak array by asking bundled FFmpeg for low-rate mono float PCM; full audio is never loaded into the React process. Display gain and timeline zoom are React-only transforms over this peak array and never touch audio samples. Audio export uses FFmpeg to create 24-bit WAV or 320 kbps MP3 clips. Video export combines the selected track with an 854×480 black color source. Both exporters accept an optional start/end range, apply short fades followed by finite leading/trailing silence filters, follow the configured destination, use collision-safe names, and run on a background thread.
 
 ## First launch and installer size
 

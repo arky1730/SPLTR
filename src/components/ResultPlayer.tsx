@@ -6,9 +6,11 @@ import {
   FolderOpen,
   LoaderCircle,
   Mic2,
+  Minus,
   Music2,
   Pause,
   Play,
+  Plus,
   RotateCcw,
   Scissors,
   Video,
@@ -23,6 +25,9 @@ type PreviewTrack = "original" | "vocals" | "instrumental";
 type ExportState = "idle" | "exporting" | "completed";
 export type WaveformGain = "auto" | 1 | 2 | 4 | 8;
 type AudioExportFormat = "wav" | "mp3";
+type TimelineZoom = 1 | 2 | 4 | 8 | 16;
+type SilenceSeconds = 0 | 0.1 | 0.25 | 0.5 | 1 | 2;
+type FadeMilliseconds = 0 | 20 | 50 | 100 | 250;
 
 export function adjustWaveformPeaks(peaks: number[], gain: WaveformGain): number[] {
   return peaks.map((peak) => {
@@ -49,7 +54,7 @@ export function parseClipRange(startValue: string, endValue: string, duration: n
   const start = Number(startValue);
   const end = Number(endValue);
   if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end <= start) return null;
-  if (duration > 0 && end > duration + 0.25) return null;
+  if (duration > 0 && end > duration + 0.02) return null;
   return { start, end };
 }
 
@@ -59,13 +64,13 @@ function mediaSource(path: string): string {
 
 function inputTime(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds < 0) return "0";
-  return (Math.round(seconds * 10) / 10).toString();
+  return (Math.round(seconds * 100) / 100).toString();
 }
 
 function preciseTime(seconds: number): string {
-  if (!Number.isFinite(seconds) || seconds < 0) return "0:00.0";
+  if (!Number.isFinite(seconds) || seconds < 0) return "0:00.00";
   const minutes = Math.floor(seconds / 60);
-  return `${minutes}:${(seconds % 60).toFixed(1).padStart(4, "0")}`;
+  return `${minutes}:${(seconds % 60).toFixed(2).padStart(5, "0")}`;
 }
 
 interface WaveformTimelineProps {
@@ -126,6 +131,9 @@ interface ClipRangeEditorProps {
   displayGain: WaveformGain;
   presetSeconds: number;
   audioFormat: AudioExportFormat;
+  silenceBefore: SilenceSeconds;
+  silenceAfter: SilenceSeconds;
+  fadeMilliseconds: FadeMilliseconds;
   exportedAudioPath: string | null;
   exportedVideoPath: string | null;
   onChange: (start: number, end: number) => void;
@@ -137,6 +145,9 @@ interface ClipRangeEditorProps {
   onDisplayGainChange: (gain: WaveformGain) => void;
   onPresetSeconds: (seconds: number) => void;
   onAudioFormatChange: (format: AudioExportFormat) => void;
+  onSilenceBeforeChange: (seconds: SilenceSeconds) => void;
+  onSilenceAfterChange: (seconds: SilenceSeconds) => void;
+  onFadeChange: (milliseconds: FadeMilliseconds) => void;
   onExportAudio: () => void;
   onExportVideo: () => void;
   onReveal: (path: string) => void;
@@ -160,6 +171,9 @@ function ClipRangeEditor({
   displayGain,
   presetSeconds,
   audioFormat,
+  silenceBefore,
+  silenceAfter,
+  fadeMilliseconds,
   exportedAudioPath,
   exportedVideoPath,
   onChange,
@@ -171,12 +185,17 @@ function ClipRangeEditor({
   onDisplayGainChange,
   onPresetSeconds,
   onAudioFormatChange,
+  onSilenceBeforeChange,
+  onSilenceAfterChange,
+  onFadeChange,
   onExportAudio,
   onExportVideo,
   onReveal,
 }: ClipRangeEditorProps) {
+  const scrollRef = useRef<HTMLDivElement>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ target: DragTarget; originTime: number; start: number; end: number } | null>(null);
+  const [zoom, setZoom] = useState<TimelineZoom>(1);
   const selectedClipId = `selected-${useId().replace(/:/g, "")}`;
   const displayPeaks = peaks.length > 0
     ? adjustWaveformPeaks(peaks, displayGain)
@@ -187,6 +206,15 @@ function ClipRangeEditor({
   const endPercent = safeDuration > 0 ? Math.min(100, Math.max(startPercent, end / safeDuration * 100)) : 100;
   const playheadPercent = safeDuration > 0 ? Math.min(100, Math.max(0, currentTime / safeDuration * 100)) : 0;
   const selectionDuration = Math.max(0, end - start);
+  const exportDuration = selectionDuration + silenceBefore + silenceAfter;
+
+  useEffect(() => {
+    const viewport = scrollRef.current;
+    const timeline = timelineRef.current;
+    if (!viewport || !timeline || safeDuration <= 0) return;
+    const center = Math.min(1, Math.max(0, ((start + end) / 2) / safeDuration));
+    viewport.scrollLeft = Math.max(0, timeline.scrollWidth * center - viewport.clientWidth / 2);
+  }, [zoom, safeDuration]);
 
   const bars = displayPeaks.map((peak, index) => {
     const height = Math.max(2.5, Math.min(39, peak * 39));
@@ -212,9 +240,9 @@ function ClipRangeEditor({
     if (!drag || safeDuration <= 0) return;
     const pointerTime = timeAt(event.clientX);
     if (drag.target === "start") {
-      onChange(Math.min(pointerTime, end - 0.1), end);
+      onChange(Math.min(pointerTime, end - 0.01), end);
     } else if (drag.target === "end") {
-      onChange(start, Math.max(pointerTime, start + 0.1));
+      onChange(start, Math.max(pointerTime, start + 0.01));
     } else {
       const length = drag.end - drag.start;
       const nextStart = Math.min(safeDuration - length, Math.max(0, drag.start + pointerTime - drag.originTime));
@@ -231,10 +259,10 @@ function ClipRangeEditor({
     if (safeDuration <= 0) return;
     if (!["ArrowLeft", "ArrowRight"].includes(event.key)) return;
     event.preventDefault();
-    const amount = event.shiftKey ? 1 : 0.1;
+    const amount = event.shiftKey ? 0.1 : 0.01;
     const direction = event.key === "ArrowRight" ? 1 : -1;
-    if (target === "start") onChange(Math.min(end - 0.1, Math.max(0, start + amount * direction)), end);
-    else onChange(start, Math.max(start + 0.1, Math.min(safeDuration, end + amount * direction)));
+    if (target === "start") onChange(Math.min(end - 0.01, Math.max(0, start + amount * direction)), end);
+    else onChange(start, Math.max(start + 0.01, Math.min(safeDuration, end + amount * direction)));
   }
 
   function seekFromTimeline(event: ReactPointerEvent<HTMLDivElement>) {
@@ -246,6 +274,13 @@ function ClipRangeEditor({
     <div className="clip-editor">
       <div className="clip-editor-head">
         <div className="export-label"><Scissors size={15} /><span><strong>Clip editor</strong><small>Drag either edge · drag the middle to move</small></span></div>
+        <div className="timeline-zoom" aria-label="Timeline zoom controls">
+          <span>ZOOM</span>
+          <button aria-label="Zoom out" disabled={zoom === 1} onClick={() => setZoom((current) => Math.max(1, current / 2) as TimelineZoom)}><Minus size={11} /></button>
+          <strong>{zoom === 1 ? "Fit" : `${zoom}×`}</strong>
+          <button aria-label="Zoom in" disabled={zoom === 16} onClick={() => setZoom((current) => Math.min(16, current * 2) as TimelineZoom)}><Plus size={11} /></button>
+          <button className="fit-zoom" disabled={zoom === 1} onClick={() => setZoom(1)}>Fit</button>
+        </div>
         <label className="waveform-gain">
           <span>WAVE DISPLAY</span>
           <select
@@ -260,11 +295,12 @@ function ClipRangeEditor({
             <option value="8">8×</option>
           </select>
         </label>
-        <div className="clip-summary"><span>{preciseTime(start)}</span><i>→</i><span>{preciseTime(end)}</span><strong>{selectionDuration.toFixed(1)} sec</strong></div>
+        <div className="clip-summary"><span>{preciseTime(start)}</span><i>→</i><span>{preciseTime(end)}</span><strong>{selectionDuration.toFixed(2)} sec</strong></div>
         <button className="reset-clip" onClick={onReset}><RotateCcw size={12} /> Full track</button>
       </div>
 
-      <div className={`clip-range-timeline ${loading ? "loading" : ""}`} ref={timelineRef} onPointerDown={seekFromTimeline}>
+      <div className="clip-range-scroll" ref={scrollRef} data-zoom={zoom}>
+      <div className={`clip-range-timeline ${loading ? "loading" : ""}`} ref={timelineRef} onPointerDown={seekFromTimeline} style={{ width: `${zoom * 100}%` }}>
         <svg viewBox="0 0 100 44" preserveAspectRatio="none" aria-hidden="true">
           <g className="clip-wave-base">{bars}</g>
           <defs><clipPath id={selectedClipId}><rect x={startPercent} y="0" width={endPercent - startPercent} height="44" /></clipPath></defs>
@@ -290,7 +326,7 @@ function ClipRangeEditor({
           role="slider"
           aria-label="Trim start"
           aria-valuemin={0}
-          aria-valuemax={Math.max(0, end - 0.1)}
+          aria-valuemax={Math.max(0, end - 0.01)}
           aria-valuenow={start}
           aria-valuetext={preciseTime(start)}
           style={{ left: `${startPercent}%` }}
@@ -306,7 +342,7 @@ function ClipRangeEditor({
           data-trim-control
           role="slider"
           aria-label="Trim end"
-          aria-valuemin={Math.min(safeDuration, start + 0.1)}
+          aria-valuemin={Math.min(safeDuration, start + 0.01)}
           aria-valuemax={safeDuration}
           aria-valuenow={end}
           aria-valuetext={preciseTime(end)}
@@ -318,6 +354,7 @@ function ClipRangeEditor({
           onPointerCancel={endDrag}
         ><i /><span>OUT</span></button>
         <div className="clip-playhead" style={{ left: `${playheadPercent}%` }} />
+      </div>
       </div>
 
       <div className="clip-preset-row">
@@ -335,9 +372,23 @@ function ClipRangeEditor({
         <small>IN stays fixed; the range shifts left near the track end.</small>
       </div>
 
+      <div className="clip-finishing-row">
+        <span>EDGE FINISH</span>
+        <label><span>BEFORE SILENCE</span><select aria-label="Silence before clip" value={silenceBefore} onChange={(event) => onSilenceBeforeChange(Number(event.target.value) as SilenceSeconds)}>
+          <option value="0">0 sec</option><option value="0.1">0.1 sec</option><option value="0.25">0.25 sec</option><option value="0.5">0.5 sec</option><option value="1">1 sec</option><option value="2">2 sec</option>
+        </select></label>
+        <label><span>AFTER SILENCE</span><select aria-label="Silence after clip" value={silenceAfter} onChange={(event) => onSilenceAfterChange(Number(event.target.value) as SilenceSeconds)}>
+          <option value="0">0 sec</option><option value="0.1">0.1 sec</option><option value="0.25">0.25 sec</option><option value="0.5">0.5 sec</option><option value="1">1 sec</option><option value="2">2 sec</option>
+        </select></label>
+        <label><span>EDGE FADE</span><select aria-label="Clip edge fade" value={fadeMilliseconds} onChange={(event) => onFadeChange(Number(event.target.value) as FadeMilliseconds)}>
+          <option value="0">Off</option><option value="20">20 ms</option><option value="50">50 ms</option><option value="100">100 ms</option><option value="250">250 ms</option>
+        </select></label>
+        <output>{exportDuration.toFixed(2)} sec output</output>
+      </div>
+
       <div className="clip-editor-controls">
-        <label><span>START SEC</span><input aria-label="Clip start seconds" type="number" min="0" step="0.1" value={startValue} onChange={(event) => onStartInput(event.target.value)} /></label>
-        <label><span>END SEC</span><input aria-label="Clip end seconds" type="number" min="0" step="0.1" value={endValue} onChange={(event) => onEndInput(event.target.value)} /></label>
+        <label><span>START SEC</span><input aria-label="Clip start seconds" type="number" min="0" step="0.01" value={startValue} onChange={(event) => onStartInput(event.target.value)} /></label>
+        <label><span>END SEC</span><input aria-label="Clip end seconds" type="number" min="0" step="0.01" value={endValue} onChange={(event) => onEndInput(event.target.value)} /></label>
         <button className={`preview-clip ${previewing ? "active" : ""}`} disabled={safeDuration <= 0} onClick={onPreview}>{previewing ? <Pause size={13} /> : <Play size={13} fill="currentColor" />}{previewing ? "Stop preview" : "Preview clip"}</button>
         <div className="audio-export-choice">
           <select aria-label="Audio export format" value={audioFormat} onChange={(event) => onAudioFormatChange(event.target.value as AudioExportFormat)}>
@@ -376,6 +427,7 @@ export function ResultPlayer({ item, disabled, onReveal, onNotice }: ResultPlaye
   const audioExportRequestRef = useRef("");
   const clipPreviewRangeRef = useRef<{ start: number; end: number } | null>(null);
   const clipInitializedRef = useRef(false);
+  const previewTimerRef = useRef<number | null>(null);
   const [track, setTrack] = useState<PreviewTrack>("vocals");
   const [playing, setPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -390,6 +442,9 @@ export function ResultPlayer({ item, disabled, onReveal, onNotice }: ResultPlaye
   const [clipEdited, setClipEdited] = useState(false);
   const [presetSeconds, setPresetSeconds] = useState(15);
   const [previewingClip, setPreviewingClip] = useState(false);
+  const [silenceBefore, setSilenceBefore] = useState<SilenceSeconds>(0);
+  const [silenceAfter, setSilenceAfter] = useState<SilenceSeconds>(0);
+  const [fadeMilliseconds, setFadeMilliseconds] = useState<FadeMilliseconds>(50);
   const [audioFormat, setAudioFormat] = useState<AudioExportFormat>("wav");
   const [audioExportState, setAudioExportState] = useState<ExportState>("idle");
   const [videoExportState, setVideoExportState] = useState<ExportState>("idle");
@@ -436,6 +491,8 @@ export function ResultPlayer({ item, disabled, onReveal, onNotice }: ResultPlaye
   }), [audioFormat, onNotice]);
 
   useEffect(() => {
+    if (previewTimerRef.current !== null) window.clearTimeout(previewTimerRef.current);
+    previewTimerRef.current = null;
     resumeTimeRef.current = 0;
     resumePlaybackRef.current = false;
     setTrack("vocals");
@@ -456,6 +513,10 @@ export function ResultPlayer({ item, disabled, onReveal, onNotice }: ResultPlaye
     setExportedAudioPath(null);
     setExportedVideoPath(null);
   }, [item?.id]);
+
+  useEffect(() => () => {
+    if (previewTimerRef.current !== null) window.clearTimeout(previewTimerRef.current);
+  }, []);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -489,8 +550,7 @@ export function ResultPlayer({ item, disabled, onReveal, onNotice }: ResultPlaye
   function selectTrack(nextTrack: PreviewTrack) {
     if (nextTrack === track) return;
     const audio = audioRef.current;
-    clipPreviewRangeRef.current = null;
-    setPreviewingClip(false);
+    cancelClipPreview(false);
     resumeTimeRef.current = audio?.currentTime ?? currentTime;
     resumePlaybackRef.current = Boolean(audio && !audio.paused);
     setExportedAudioPath(null);
@@ -519,8 +579,7 @@ export function ResultPlayer({ item, disabled, onReveal, onNotice }: ResultPlaye
     const audio = audioRef.current;
     if (!audio || !activePath) return;
     if (audio.paused) {
-      clipPreviewRangeRef.current = null;
-      setPreviewingClip(false);
+      cancelClipPreview(false);
       try {
         await audio.play();
       } catch {
@@ -528,21 +587,31 @@ export function ResultPlayer({ item, disabled, onReveal, onNotice }: ResultPlaye
       }
     } else {
       audio.pause();
-      clipPreviewRangeRef.current = null;
-      setPreviewingClip(false);
+      cancelClipPreview(false);
     }
   }
 
   function handleTimeUpdate(audio: HTMLAudioElement) {
     const nextTime = audio.currentTime;
     const previewRange = clipPreviewRangeRef.current;
-    if (previewRange && nextTime >= previewRange.end) {
-      audio.pause();
-      audio.currentTime = previewRange.start;
-      setCurrentTime(previewRange.start);
-      clipPreviewRangeRef.current = null;
-      setPreviewingClip(false);
-      return;
+    if (previewRange) {
+      const fadeSeconds = fadeMilliseconds / 1000;
+      if (fadeSeconds > 0) {
+        const fadeInGain = Math.min(1, Math.max(0, (nextTime - previewRange.start) / fadeSeconds));
+        const fadeOutGain = Math.min(1, Math.max(0, (previewRange.end - nextTime) / fadeSeconds));
+        audio.volume = volume * Math.min(fadeInGain, fadeOutGain);
+      }
+      if (nextTime >= previewRange.end) {
+        audio.pause();
+        audio.volume = volume;
+        audio.currentTime = previewRange.start;
+        setCurrentTime(previewRange.start);
+        clipPreviewRangeRef.current = null;
+        if (silenceAfter > 0) {
+          previewTimerRef.current = window.setTimeout(() => finishClipPreview(), silenceAfter * 1000);
+        } else finishClipPreview();
+        return;
+      }
     }
     setCurrentTime(nextTime);
   }
@@ -550,6 +619,7 @@ export function ResultPlayer({ item, disabled, onReveal, onNotice }: ResultPlaye
   function seek(value: number) {
     const audio = audioRef.current;
     if (!audio) return;
+    if (previewingClip) cancelClipPreview();
     audio.currentTime = value;
     setCurrentTime(value);
   }
@@ -562,10 +632,7 @@ export function ResultPlayer({ item, disabled, onReveal, onNotice }: ResultPlaye
   }
 
   function setClipRange(start: number, end: number) {
-    const audio = audioRef.current;
-    if (previewingClip) audio?.pause();
-    clipPreviewRangeRef.current = null;
-    setPreviewingClip(false);
+    if (previewingClip) cancelClipPreview();
     setClipEdited(true);
     setClipStart(inputTime(start));
     setClipEnd(inputTime(end));
@@ -581,10 +648,7 @@ export function ResultPlayer({ item, disabled, onReveal, onNotice }: ResultPlaye
   }
 
   function resetClip() {
-    const audio = audioRef.current;
-    if (previewingClip) audio?.pause();
-    clipPreviewRangeRef.current = null;
-    setPreviewingClip(false);
+    if (previewingClip) cancelClipPreview();
     setClipStart("0");
     setClipEnd(inputTime(duration));
     setClipEdited(false);
@@ -605,23 +669,62 @@ export function ResultPlayer({ item, disabled, onReveal, onNotice }: ResultPlaye
     const audio = audioRef.current;
     if (!audio) return;
     if (previewingClip) {
-      audio.pause();
-      clipPreviewRangeRef.current = null;
-      setPreviewingClip(false);
+      cancelClipPreview();
       return;
     }
-    clipPreviewRangeRef.current = range;
     resumeTimeRef.current = range.start;
     setPreviewingClip(true);
+    audio.pause();
     audio.currentTime = range.start;
     setCurrentTime(range.start);
+    if (silenceBefore > 0) {
+      previewTimerRef.current = window.setTimeout(() => void startClipAudio(audio, range), silenceBefore * 1000);
+      return;
+    }
+    await startClipAudio(audio, range);
+  }
+
+  async function startClipAudio(audio: HTMLAudioElement, range: { start: number; end: number }) {
+    previewTimerRef.current = null;
+    clipPreviewRangeRef.current = range;
+    audio.volume = fadeMilliseconds > 0 ? 0 : volume;
     try {
       await audio.play();
     } catch {
-      clipPreviewRangeRef.current = null;
-      setPreviewingClip(false);
+      cancelClipPreview(false);
       setAudioError(true);
     }
+  }
+
+  function finishClipPreview() {
+    previewTimerRef.current = null;
+    clipPreviewRangeRef.current = null;
+    setPreviewingClip(false);
+  }
+
+  function cancelClipPreview(pauseAudio = true) {
+    if (previewTimerRef.current !== null) window.clearTimeout(previewTimerRef.current);
+    previewTimerRef.current = null;
+    clipPreviewRangeRef.current = null;
+    const audio = audioRef.current;
+    if (audio) {
+      if (pauseAudio) audio.pause();
+      audio.volume = volume;
+    }
+    setPreviewingClip(false);
+  }
+
+  function handleEnded(audio: HTMLAudioElement) {
+    setPlaying(false);
+    const range = clipPreviewRangeRef.current;
+    audio.volume = volume;
+    if (!range) return;
+    audio.currentTime = range.start;
+    setCurrentTime(range.start);
+    clipPreviewRangeRef.current = null;
+    if (silenceAfter > 0) {
+      previewTimerRef.current = window.setTimeout(() => finishClipPreview(), silenceAfter * 1000);
+    } else finishClipPreview();
   }
 
   function exportVideo() {
@@ -641,6 +744,10 @@ export function ResultPlayer({ item, disabled, onReveal, onNotice }: ResultPlaye
       path: activePath,
       startSeconds: clipEdited ? range.start : 0,
       endSeconds: clipEdited ? range.end : null,
+      contentDurationSeconds: range.end - range.start,
+      silenceBeforeSeconds: silenceBefore,
+      silenceAfterSeconds: silenceAfter,
+      fadeSeconds: fadeMilliseconds / 1000,
     }).catch(() => {
       setVideoExportState("idle");
       onNotice("Could not start the MP4 export.");
@@ -665,6 +772,10 @@ export function ResultPlayer({ item, disabled, onReveal, onNotice }: ResultPlaye
       format: audioFormat,
       startSeconds: clipEdited ? range.start : 0,
       endSeconds: clipEdited ? range.end : null,
+      contentDurationSeconds: range.end - range.start,
+      silenceBeforeSeconds: silenceBefore,
+      silenceAfterSeconds: silenceAfter,
+      fadeSeconds: fadeMilliseconds / 1000,
     }).catch(() => {
       setAudioExportState("idle");
       onNotice("Could not start the audio export.");
@@ -699,7 +810,7 @@ export function ResultPlayer({ item, disabled, onReveal, onNotice }: ResultPlaye
         onTimeUpdate={(event) => handleTimeUpdate(event.currentTarget)}
         onPlay={() => setPlaying(true)}
         onPause={() => setPlaying(false)}
-        onEnded={() => { setPlaying(false); clipPreviewRangeRef.current = null; setPreviewingClip(false); }}
+        onEnded={(event) => handleEnded(event.currentTarget)}
         onError={() => setAudioError(true)}
       />
 
@@ -748,17 +859,23 @@ export function ResultPlayer({ item, disabled, onReveal, onNotice }: ResultPlaye
         displayGain={displayGain}
         presetSeconds={presetSeconds}
         audioFormat={audioFormat}
+        silenceBefore={silenceBefore}
+        silenceAfter={silenceAfter}
+        fadeMilliseconds={fadeMilliseconds}
         exportedAudioPath={exportedAudioPath}
         exportedVideoPath={exportedVideoPath}
         onChange={setClipRange}
         onSeek={seek}
         onPreview={() => void previewClip()}
         onReset={resetClip}
-        onStartInput={(value) => { if (previewingClip) audioRef.current?.pause(); clipPreviewRangeRef.current = null; setPreviewingClip(false); setClipEdited(true); setClipStart(value); }}
-        onEndInput={(value) => { if (previewingClip) audioRef.current?.pause(); clipPreviewRangeRef.current = null; setPreviewingClip(false); setClipEdited(true); setClipEnd(value); }}
+        onStartInput={(value) => { if (previewingClip) cancelClipPreview(); setClipEdited(true); setClipStart(value); }}
+        onEndInput={(value) => { if (previewingClip) cancelClipPreview(); setClipEdited(true); setClipEnd(value); }}
         onDisplayGainChange={setDisplayGain}
         onPresetSeconds={applyPresetSeconds}
         onAudioFormatChange={setAudioFormat}
+        onSilenceBeforeChange={setSilenceBefore}
+        onSilenceAfterChange={setSilenceAfter}
+        onFadeChange={setFadeMilliseconds}
         onExportAudio={exportAudio}
         onExportVideo={exportVideo}
         onReveal={onReveal}

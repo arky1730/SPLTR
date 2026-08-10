@@ -73,6 +73,10 @@ class SeparationService:
                 str(command.get("path", "")),
                 command.get("startSeconds", 0),
                 command.get("endSeconds"),
+                command.get("contentDurationSeconds"),
+                command.get("silenceBeforeSeconds", 0),
+                command.get("silenceAfterSeconds", 0),
+                command.get("fadeSeconds", 0),
             )
         elif kind == "export_audio":
             self.start_audio_export(
@@ -81,6 +85,10 @@ class SeparationService:
                 str(command.get("format", "wav")),
                 command.get("startSeconds", 0),
                 command.get("endSeconds"),
+                command.get("contentDurationSeconds"),
+                command.get("silenceBeforeSeconds", 0),
+                command.get("silenceAfterSeconds", 0),
+                command.get("fadeSeconds", 0),
             )
         elif kind == "shutdown":
             self.cancel.set()
@@ -341,6 +349,10 @@ class SeparationService:
         raw_path: str,
         raw_start: object,
         raw_end: object,
+        raw_content_duration: object,
+        raw_silence_before: object,
+        raw_silence_after: object,
+        raw_fade: object,
     ) -> None:
         if not request_id or not raw_path:
             raise ValueError("Video export requires a requestId and path")
@@ -353,6 +365,10 @@ class SeparationService:
         try:
             start_seconds = float(raw_start)
             end_seconds = None if raw_end is None else float(raw_end)
+            content_duration = None if raw_content_duration is None else float(raw_content_duration)
+            silence_before = float(raw_silence_before)
+            silence_after = float(raw_silence_after)
+            fade_seconds = float(raw_fade)
         except (TypeError, ValueError) as exc:
             raise ValueError("Video export times must be numbers") from exc
 
@@ -368,11 +384,15 @@ class SeparationService:
                 output = export_black_video(
                     self.ffmpeg, source, start_seconds=start_seconds,
                     end_seconds=end_seconds, output_dir=output_dir,
+                    content_duration_seconds=content_duration,
+                    silence_before_seconds=silence_before,
+                    silence_after_seconds=silence_after,
+                    fade_seconds=fade_seconds,
                 )
                 self.writer.emit(
                     "export_video", requestId=request_id, state="completed", path=str(output)
                 )
-                self.logger.info("Exported 480p vocal video to %s", output)
+                self.logger.info("Exported 480p black-screen video to %s", output)
             except MediaToolError as exc:
                 self.logger.warning("Video export failed for %s: %s", raw_path, exc)
                 self.writer.emit(
@@ -395,6 +415,10 @@ class SeparationService:
         audio_format: str,
         raw_start: object,
         raw_end: object,
+        raw_content_duration: object,
+        raw_silence_before: object,
+        raw_silence_after: object,
+        raw_fade: object,
     ) -> None:
         if not request_id or not raw_path:
             raise ValueError("Audio export requires a requestId and path")
@@ -410,6 +434,10 @@ class SeparationService:
         try:
             start_seconds = float(raw_start)
             end_seconds = None if raw_end is None else float(raw_end)
+            content_duration = None if raw_content_duration is None else float(raw_content_duration)
+            silence_before = float(raw_silence_before)
+            silence_after = float(raw_silence_after)
+            fade_seconds = float(raw_fade)
         except (TypeError, ValueError) as exc:
             raise ValueError("Audio export times must be numbers") from exc
 
@@ -423,7 +451,8 @@ class SeparationService:
                 if output_dir is None:
                     raise MediaToolError("Choose an output folder before exporting.")
                 output = export_audio_clip(
-                    self.ffmpeg, source, output_dir, selected_format, start_seconds, end_seconds
+                    self.ffmpeg, source, output_dir, selected_format, start_seconds, end_seconds,
+                    content_duration, silence_before, silence_after, fade_seconds,
                 )
                 self.writer.emit(
                     "export_audio", requestId=request_id, state="completed", path=str(output),
