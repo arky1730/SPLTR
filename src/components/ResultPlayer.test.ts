@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { adjustWaveformPeaks, clipRangeForPreset, formatPlayerTime, parseClipRange } from "./ResultPlayer";
+import { adjustWaveformPeaks, clipRangeForPreset, fixedOutputDuration, formatPlayerTime, parseClipRange } from "./ResultPlayer";
 
 describe("formatPlayerTime", () => {
   it("formats transport time without decimals", () => {
@@ -50,5 +50,16 @@ describe("clipRangeForPreset", () => {
 
   it("shifts left near the track end to preserve the preset length", () => {
     expect(clipRangeForPreset(25, 10, 30)).toEqual({ start: 20, end: 30 });
+  });
+});
+
+describe("fixedOutputDuration", () => {
+  it("keeps trimmed audio and visible silence inside one fixed frame", () => {
+    expect(fixedOutputDuration({
+      sourceStart: 10,
+      sourceEnd: 24.4,
+      silenceBefore: 0.1,
+      silenceAfter: 0.5,
+    })).toBeCloseTo(15, 6);
   });
 });

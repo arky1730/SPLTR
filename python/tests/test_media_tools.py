@@ -48,20 +48,21 @@ def test_audio_export_command_is_clipped_and_uses_expected_codec(
     assert command[-1] == str(output)
 
 
-def test_export_filter_adds_fades_and_silence_padding() -> None:
-    audio_filter = build_export_audio_filter(15.0, 0.25, 0.5, 0.05)
-    assert "afade=t=in:st=0:d=0.050" in audio_filter
-    assert "afade=t=out:st=14.950:d=0.050" in audio_filter
+def test_export_filter_keeps_fixed_output_duration() -> None:
+    audio_filter = build_export_audio_filter(14.25, 0.25, 0.5, 15.0, 0.02, 0.05)
+    assert "afade=t=in:st=0:d=0.020" in audio_filter
+    assert "afade=t=out:st=14.200:d=0.050" in audio_filter
     assert "adelay=250:all=1" in audio_filter
-    assert "apad=pad_dur=0.500" in audio_filter
+    assert "apad=whole_dur=15.000" in audio_filter
+    assert "atrim=duration=15.000" in audio_filter
 
 
 def test_black_video_applies_audio_finish_filter() -> None:
     command = build_black_video_command(
         Path("ffmpeg.exe"), Path("song_vocals.wav"), Path("song_vocals_clip.mp4"),
-        2.0, 12.0, 10.0, 0.1, 0.25, 0.05,
+        2.0, 12.0, 10.0, 0.1, 0.25, 10.35, 0.02, 0.05,
     )
     assert "-af" in command
     audio_filter = command[command.index("-af") + 1]
     assert "adelay=100:all=1" in audio_filter
-    assert "apad=pad_dur=0.250" in audio_filter
+    assert "apad=whole_dur=10.350" in audio_filter

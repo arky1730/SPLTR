@@ -26,8 +26,19 @@ type ExportState = "idle" | "exporting" | "completed";
 export type WaveformGain = "auto" | 1 | 2 | 4 | 8;
 type AudioExportFormat = "wav" | "mp3";
 type TimelineZoom = 1 | 2 | 4 | 8 | 16;
-type SilenceSeconds = 0 | 0.1 | 0.25 | 0.5 | 1 | 2;
-type FadeMilliseconds = 0 | 20 | 50 | 100 | 250;
+
+export interface FixedClipLayout {
+  sourceStart: number;
+  sourceEnd: number;
+  silenceBefore: number;
+  silenceAfter: number;
+}
+
+const MIN_AUDIO_SECONDS = 0.05;
+
+export function fixedOutputDuration(layout: FixedClipLayout): number {
+  return layout.silenceBefore + Math.max(0, layout.sourceEnd - layout.sourceStart) + layout.silenceAfter;
+}
 
 export function adjustWaveformPeaks(peaks: number[], gain: WaveformGain): number[] {
   return peaks.map((peak) => {
@@ -64,7 +75,11 @@ function mediaSource(path: string): string {
 
 function inputTime(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds < 0) return "0";
-  return (Math.round(seconds * 100) / 100).toString();
+  return roundTime(seconds).toString();
+}
+
+function roundTime(seconds: number): number {
+  return Math.round(seconds * 100) / 100;
 }
 
 function preciseTime(seconds: number): string {
@@ -120,8 +135,8 @@ interface ClipRangeEditorProps {
   loading: boolean;
   currentTime: number;
   duration: number;
-  start: number;
-  end: number;
+  layout: FixedClipLayout;
+  outputDuration: number;
   startValue: string;
   endValue: string;
   previewing: boolean;
@@ -131,12 +146,11 @@ interface ClipRangeEditorProps {
   displayGain: WaveformGain;
   presetSeconds: number;
   audioFormat: AudioExportFormat;
-  silenceBefore: SilenceSeconds;
-  silenceAfter: SilenceSeconds;
-  fadeMilliseconds: FadeMilliseconds;
+  fadeInSeconds: number;
+  fadeOutSeconds: number;
   exportedAudioPath: string | null;
   exportedVideoPath: string | null;
-  onChange: (start: number, end: number) => void;
+  onLayoutChange: (layout: FixedClipLayout) => void;
   onSeek: (seconds: number) => void;
   onPreview: () => void;
   onReset: () => void;
@@ -145,23 +159,22 @@ interface ClipRangeEditorProps {
   onDisplayGainChange: (gain: WaveformGain) => void;
   onPresetSeconds: (seconds: number) => void;
   onAudioFormatChange: (format: AudioExportFormat) => void;
-  onSilenceBeforeChange: (seconds: SilenceSeconds) => void;
-  onSilenceAfterChange: (seconds: SilenceSeconds) => void;
-  onFadeChange: (milliseconds: FadeMilliseconds) => void;
+  onFadeInChange: (seconds: number) => void;
+  onFadeOutChange: (seconds: number) => void;
   onExportAudio: () => void;
   onExportVideo: () => void;
   onReveal: (path: string) => void;
 }
 
-type DragTarget = "start" | "end" | "selection";
+type DragTarget = "audio-start" | "audio-end" | "audio-block" | "source-block" | "fade-in" | "fade-out";
 
 function ClipRangeEditor({
   peaks,
   loading,
   currentTime,
   duration,
-  start,
-  end,
+  layout,
+  outputDuration,
   startValue,
   endValue,
   previewing,
@@ -171,12 +184,11 @@ function ClipRangeEditor({
   displayGain,
   presetSeconds,
   audioFormat,
-  silenceBefore,
-  silenceAfter,
-  fadeMilliseconds,
+  fadeInSeconds,
+  fadeOutSeconds,
   exportedAudioPath,
   exportedVideoPath,
-  onChange,
+  onLayoutChange,
   onSeek,
   onPreview,
   onReset,
@@ -185,68 +197,118 @@ function ClipRangeEditor({
   onDisplayGainChange,
   onPresetSeconds,
   onAudioFormatChange,
-  onSilenceBeforeChange,
-  onSilenceAfterChange,
-  onFadeChange,
+  onFadeInChange,
+  onFadeOutChange,
   onExportAudio,
   onExportVideo,
   onReveal,
 }: ClipRangeEditorProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const timelineRef = useRef<HTMLDivElement>(null);
-  const dragRef = useRef<{ target: DragTarget; originTime: number; start: number; end: number } | null>(null);
+  const outputTimelineRef = useRef<HTMLDivElement>(null);
+  const sourceTimelineRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<{ target: DragTarget; originTime: number; layout: FixedClipLayout; fadeIn: number; fadeOut: number } | null>(null);
   const [zoom, setZoom] = useState<TimelineZoom>(1);
-  const selectedClipId = `selected-${useId().replace(/:/g, "")}`;
   const displayPeaks = peaks.length > 0
     ? adjustWaveformPeaks(peaks, displayGain)
     : Array.from({ length: 140 }, (_, index) => loading ? 0.14 + Math.abs(Math.sin(index * 0.39)) * 0.2 : 0.04);
-  const barWidth = 100 / displayPeaks.length;
   const safeDuration = Math.max(duration, 0);
-  const startPercent = safeDuration > 0 ? Math.min(100, Math.max(0, start / safeDuration * 100)) : 0;
-  const endPercent = safeDuration > 0 ? Math.min(100, Math.max(startPercent, end / safeDuration * 100)) : 100;
-  const playheadPercent = safeDuration > 0 ? Math.min(100, Math.max(0, currentTime / safeDuration * 100)) : 0;
-  const selectionDuration = Math.max(0, end - start);
-  const exportDuration = selectionDuration + silenceBefore + silenceAfter;
+  const safeOutputDuration = Math.max(MIN_AUDIO_SECONDS, outputDuration);
+  const contentDuration = Math.max(MIN_AUDIO_SECONDS, layout.sourceEnd - layout.sourceStart);
+  const audioStart = layout.silenceBefore;
+  const audioEnd = safeOutputDuration - layout.silenceAfter;
+  const audioStartPercent = audioStart / safeOutputDuration * 100;
+  const audioEndPercent = audioEnd / safeOutputDuration * 100;
+  const contentPercent = contentDuration / safeOutputDuration * 100;
+  const sourceStartPercent = safeDuration > 0 ? layout.sourceStart / safeDuration * 100 : 0;
+  const sourceEndPercent = safeDuration > 0 ? layout.sourceEnd / safeDuration * 100 : 0;
+  const playheadOutput = audioStart + currentTime - layout.sourceStart;
+  const playheadPercent = playheadOutput >= audioStart && playheadOutput <= audioEnd
+    ? playheadOutput / safeOutputDuration * 100
+    : -1;
 
   useEffect(() => {
     const viewport = scrollRef.current;
-    const timeline = timelineRef.current;
+    const timeline = outputTimelineRef.current;
     if (!viewport || !timeline || safeDuration <= 0) return;
-    const center = Math.min(1, Math.max(0, ((start + end) / 2) / safeDuration));
+    const center = (audioStart + audioEnd) / 2 / safeOutputDuration;
     viewport.scrollLeft = Math.max(0, timeline.scrollWidth * center - viewport.clientWidth / 2);
-  }, [zoom, safeDuration]);
+  }, [zoom, safeDuration, safeOutputDuration]);
 
-  const bars = displayPeaks.map((peak, index) => {
-    const height = Math.max(2.5, Math.min(39, peak * 39));
-    return <rect key={index} x={index * barWidth} y={(44 - height) / 2} width={Math.max(0.1, barWidth * 0.58)} height={height} rx={barWidth * 0.14} />;
+  const outputBars = displayPeaks.flatMap((peak, index) => {
+    if (safeDuration <= 0) return [];
+    const sourceTime = (index + 0.5) / displayPeaks.length * safeDuration;
+    if (sourceTime < layout.sourceStart || sourceTime > layout.sourceEnd) return [];
+    const x = (audioStart + sourceTime - layout.sourceStart) / safeOutputDuration * 100;
+    const width = Math.max(0.08, safeDuration / displayPeaks.length / safeOutputDuration * 72);
+    const height = Math.max(3, Math.min(48, peak * 48));
+    return [<rect key={index} x={x} y={(52 - height) / 2} width={width} height={height} rx={0.18} />];
   });
 
-  function timeAt(clientX: number): number {
-    const rect = timelineRef.current?.getBoundingClientRect();
+  const sourceBars = displayPeaks.map((peak, index) => {
+    const width = 100 / displayPeaks.length;
+    const height = Math.max(2, Math.min(24, peak * 24));
+    return <rect key={index} x={index * width} y={(26 - height) / 2} width={Math.max(0.08, width * 0.62)} height={height} rx={0.12} />;
+  });
+
+  function outputTimeAt(clientX: number): number {
+    const rect = outputTimelineRef.current?.getBoundingClientRect();
+    if (!rect) return 0;
+    return Math.min(safeOutputDuration, Math.max(0, (clientX - rect.left) / rect.width * safeOutputDuration));
+  }
+
+  function sourceTimeAt(clientX: number): number {
+    const rect = sourceTimelineRef.current?.getBoundingClientRect();
     if (!rect || safeDuration <= 0) return 0;
     return Math.min(safeDuration, Math.max(0, (clientX - rect.left) / rect.width * safeDuration));
   }
 
   function beginDrag(target: DragTarget, event: ReactPointerEvent<HTMLButtonElement>) {
-    if (safeDuration <= 0) return;
+    if (safeDuration <= 0 || safeOutputDuration <= 0) return;
     event.preventDefault();
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
-    dragRef.current = { target, originTime: timeAt(event.clientX), start, end };
+    dragRef.current = {
+      target,
+      originTime: target === "source-block" ? sourceTimeAt(event.clientX) : outputTimeAt(event.clientX),
+      layout: { ...layout },
+      fadeIn: fadeInSeconds,
+      fadeOut: fadeOutSeconds,
+    };
   }
 
   function continueDrag(event: ReactPointerEvent<HTMLButtonElement>) {
     const drag = dragRef.current;
     if (!drag || safeDuration <= 0) return;
-    const pointerTime = timeAt(event.clientX);
-    if (drag.target === "start") {
-      onChange(Math.min(pointerTime, end - 0.01), end);
-    } else if (drag.target === "end") {
-      onChange(start, Math.max(pointerTime, start + 0.01));
-    } else {
-      const length = drag.end - drag.start;
-      const nextStart = Math.min(safeDuration - length, Math.max(0, drag.start + pointerTime - drag.originTime));
-      onChange(nextStart, nextStart + length);
+    const originalContent = drag.layout.sourceEnd - drag.layout.sourceStart;
+    const originalAudioStart = drag.layout.silenceBefore;
+    const originalAudioEnd = safeOutputDuration - drag.layout.silenceAfter;
+
+    if (drag.target === "source-block") {
+      const delta = sourceTimeAt(event.clientX) - drag.originTime;
+      const nextStart = Math.min(safeDuration - originalContent, Math.max(0, drag.layout.sourceStart + delta));
+      onLayoutChange({ ...drag.layout, sourceStart: nextStart, sourceEnd: nextStart + originalContent });
+      return;
+    }
+
+    const pointerTime = outputTimeAt(event.clientX);
+    if (drag.target === "audio-start") {
+      const minimum = Math.max(0, originalAudioStart - drag.layout.sourceStart);
+      const nextAudioStart = Math.min(originalAudioEnd - MIN_AUDIO_SECONDS, Math.max(minimum, pointerTime));
+      const delta = nextAudioStart - originalAudioStart;
+      onLayoutChange({ ...drag.layout, sourceStart: drag.layout.sourceStart + delta, silenceBefore: nextAudioStart });
+    } else if (drag.target === "audio-end") {
+      const maximum = Math.min(safeOutputDuration, originalAudioEnd + safeDuration - drag.layout.sourceEnd);
+      const nextAudioEnd = Math.max(originalAudioStart + MIN_AUDIO_SECONDS, Math.min(maximum, pointerTime));
+      const delta = nextAudioEnd - originalAudioEnd;
+      onLayoutChange({ ...drag.layout, sourceEnd: drag.layout.sourceEnd + delta, silenceAfter: safeOutputDuration - nextAudioEnd });
+    } else if (drag.target === "audio-block") {
+      const delta = pointerTime - drag.originTime;
+      const nextBefore = Math.min(safeOutputDuration - originalContent, Math.max(0, originalAudioStart + delta));
+      onLayoutChange({ ...drag.layout, silenceBefore: nextBefore, silenceAfter: safeOutputDuration - originalContent - nextBefore });
+    } else if (drag.target === "fade-in") {
+      onFadeInChange(Math.min(contentDuration / 2, Math.max(0, pointerTime - originalAudioStart)));
+    } else if (drag.target === "fade-out") {
+      onFadeOutChange(Math.min(contentDuration / 2, Math.max(0, originalAudioEnd - pointerTime)));
     }
   }
 
@@ -261,19 +323,45 @@ function ClipRangeEditor({
     event.preventDefault();
     const amount = event.shiftKey ? 0.1 : 0.01;
     const direction = event.key === "ArrowRight" ? 1 : -1;
-    if (target === "start") onChange(Math.min(end - 0.01, Math.max(0, start + amount * direction)), end);
-    else onChange(start, Math.max(start + 0.01, Math.min(safeDuration, end + amount * direction)));
+    const pointer = (target === "start" ? audioStart : audioEnd) + amount * direction;
+    const fakeDrag = {
+      target: target === "start" ? "audio-start" as const : "audio-end" as const,
+      originTime: target === "start" ? audioStart : audioEnd,
+      layout: { ...layout }, fadeIn: fadeInSeconds, fadeOut: fadeOutSeconds,
+    };
+    dragRef.current = fakeDrag;
+    const originalRect = outputTimelineRef.current?.getBoundingClientRect();
+    if (originalRect) {
+      const clientX = originalRect.left + pointer / safeOutputDuration * originalRect.width;
+      continueDrag({ clientX } as ReactPointerEvent<HTMLButtonElement>);
+    }
+    dragRef.current = null;
   }
 
-  function seekFromTimeline(event: ReactPointerEvent<HTMLDivElement>) {
+  function seekFromOutput(event: ReactPointerEvent<HTMLDivElement>) {
     if ((event.target as HTMLElement).closest("[data-trim-control]")) return;
-    onSeek(timeAt(event.clientX));
+    const outputTime = outputTimeAt(event.clientX);
+    if (outputTime >= audioStart && outputTime <= audioEnd) {
+      onSeek(layout.sourceStart + outputTime - audioStart);
+    }
+  }
+
+  function setSilenceBefore(value: number) {
+    const next = Math.min(audioEnd - MIN_AUDIO_SECONDS, Math.max(Math.max(0, audioStart - layout.sourceStart), value));
+    const delta = next - audioStart;
+    onLayoutChange({ ...layout, sourceStart: layout.sourceStart + delta, silenceBefore: next });
+  }
+
+  function setSilenceAfter(value: number) {
+    const next = Math.min(safeOutputDuration - audioStart - MIN_AUDIO_SECONDS, Math.max(Math.max(0, layout.sourceEnd - safeDuration + layout.silenceAfter), value));
+    const delta = next - layout.silenceAfter;
+    onLayoutChange({ ...layout, sourceEnd: layout.sourceEnd - delta, silenceAfter: next });
   }
 
   return (
     <div className="clip-editor">
       <div className="clip-editor-head">
-        <div className="export-label"><Scissors size={15} /><span><strong>Clip editor</strong><small>Drag either edge · drag the middle to move</small></span></div>
+        <div className="export-label"><Scissors size={15} /><span><strong>Fixed-length clip</strong><small>Trim the audio block; the empty area becomes silence</small></span></div>
         <div className="timeline-zoom" aria-label="Timeline zoom controls">
           <span>ZOOM</span>
           <button aria-label="Zoom out" disabled={zoom === 1} onClick={() => setZoom((current) => Math.max(1, current / 2) as TimelineZoom)}><Minus size={11} /></button>
@@ -295,26 +383,25 @@ function ClipRangeEditor({
             <option value="8">8×</option>
           </select>
         </label>
-        <div className="clip-summary"><span>{preciseTime(start)}</span><i>→</i><span>{preciseTime(end)}</span><strong>{selectionDuration.toFixed(2)} sec</strong></div>
-        <button className="reset-clip" onClick={onReset}><RotateCcw size={12} /> Full track</button>
+        <div className="clip-summary"><span>OUTPUT</span><strong>{safeOutputDuration.toFixed(2)} sec</strong><i>•</i><span>AUDIO</span><strong>{contentDuration.toFixed(2)} sec</strong></div>
+        <button className="reset-clip" onClick={onReset}><RotateCcw size={12} /> Reset clip</button>
       </div>
 
       <div className="clip-range-scroll" ref={scrollRef} data-zoom={zoom}>
-      <div className={`clip-range-timeline ${loading ? "loading" : ""}`} ref={timelineRef} onPointerDown={seekFromTimeline} style={{ width: `${zoom * 100}%` }}>
-        <svg viewBox="0 0 100 44" preserveAspectRatio="none" aria-hidden="true">
-          <g className="clip-wave-base">{bars}</g>
-          <defs><clipPath id={selectedClipId}><rect x={startPercent} y="0" width={endPercent - startPercent} height="44" /></clipPath></defs>
-          <g className="clip-wave-selected" clipPath={`url(#${selectedClipId})`}>{bars}</g>
+      <div className={`clip-range-timeline fixed-output-timeline ${loading ? "loading" : ""}`} ref={outputTimelineRef} onPointerDown={seekFromOutput} style={{ width: `${zoom * 100}%` }}>
+        <div className="output-ruler"><span>0.00</span><strong>OUTPUT CLIP · {safeOutputDuration.toFixed(2)} SEC</strong><span>{safeOutputDuration.toFixed(2)}</span></div>
+        <div className="silence-region silence-before" style={{ width: `${audioStartPercent}%` }}><span>{layout.silenceBefore >= .01 ? `${layout.silenceBefore.toFixed(2)}s` : ""}</span></div>
+        <div className="silence-region silence-after" style={{ left: `${audioEndPercent}%` }}><span>{layout.silenceAfter >= .01 ? `${layout.silenceAfter.toFixed(2)}s` : ""}</span></div>
+        <svg viewBox="0 0 100 52" preserveAspectRatio="none" aria-hidden="true">
+          <g className="clip-wave-selected">{outputBars}</g>
         </svg>
-        <div className="clip-outside clip-outside-left" style={{ width: `${startPercent}%` }} />
-        <div className="clip-outside clip-outside-right" style={{ left: `${endPercent}%` }} />
         <button
           type="button"
-          className="clip-selection-drag"
+          className="clip-selection-drag audio-clip-block"
           data-trim-control
-          aria-label="Move selected clip"
-          style={{ left: `${startPercent}%`, width: `${endPercent - startPercent}%` }}
-          onPointerDown={(event) => beginDrag("selection", event)}
+          aria-label="Move audio block inside output clip"
+          style={{ left: `${audioStartPercent}%`, width: `${contentPercent}%` }}
+          onPointerDown={(event) => beginDrag("audio-block", event)}
           onPointerMove={continueDrag}
           onPointerUp={endDrag}
           onPointerCancel={endDrag}
@@ -326,39 +413,53 @@ function ClipRangeEditor({
           role="slider"
           aria-label="Trim start"
           aria-valuemin={0}
-          aria-valuemax={Math.max(0, end - 0.01)}
-          aria-valuenow={start}
-          aria-valuetext={preciseTime(start)}
-          style={{ left: `${startPercent}%` }}
+          aria-valuemax={Math.max(0, audioEnd - MIN_AUDIO_SECONDS)}
+          aria-valuenow={audioStart}
+          aria-valuetext={`${layout.silenceBefore.toFixed(2)} seconds leading silence`}
+          style={{ left: `${audioStartPercent}%` }}
           onKeyDown={(event) => adjustHandle("start", event)}
-          onPointerDown={(event) => beginDrag("start", event)}
+          onPointerDown={(event) => beginDrag("audio-start", event)}
           onPointerMove={continueDrag}
           onPointerUp={endDrag}
           onPointerCancel={endDrag}
-        ><i /><span>IN</span></button>
+        ><i /><span>TRIM IN</span></button>
         <button
           type="button"
           className="clip-handle clip-handle-end"
           data-trim-control
           role="slider"
           aria-label="Trim end"
-          aria-valuemin={Math.min(safeDuration, start + 0.01)}
-          aria-valuemax={safeDuration}
-          aria-valuenow={end}
-          aria-valuetext={preciseTime(end)}
-          style={{ left: `${endPercent}%` }}
+          aria-valuemin={Math.min(safeOutputDuration, audioStart + MIN_AUDIO_SECONDS)}
+          aria-valuemax={safeOutputDuration}
+          aria-valuenow={audioEnd}
+          aria-valuetext={`${layout.silenceAfter.toFixed(2)} seconds trailing silence`}
+          style={{ left: `${audioEndPercent}%` }}
           onKeyDown={(event) => adjustHandle("end", event)}
-          onPointerDown={(event) => beginDrag("end", event)}
+          onPointerDown={(event) => beginDrag("audio-end", event)}
           onPointerMove={continueDrag}
           onPointerUp={endDrag}
           onPointerCancel={endDrag}
-        ><i /><span>OUT</span></button>
-        <div className="clip-playhead" style={{ left: `${playheadPercent}%` }} />
+        ><i /><span>TRIM OUT</span></button>
+        {fadeInSeconds > 0 && <div className="fade-shade fade-shade-in" style={{ left: `${audioStartPercent}%`, width: `${fadeInSeconds / safeOutputDuration * 100}%` }} />}
+        {fadeOutSeconds > 0 && <div className="fade-shade fade-shade-out" style={{ left: `${(audioEnd - fadeOutSeconds) / safeOutputDuration * 100}%`, width: `${fadeOutSeconds / safeOutputDuration * 100}%` }} />}
+        <button className="fade-handle fade-in-handle" data-trim-control aria-label="Drag fade in" style={{ left: `${(audioStart + fadeInSeconds) / safeOutputDuration * 100}%` }} onPointerDown={(event) => beginDrag("fade-in", event)} onPointerMove={continueDrag} onPointerUp={endDrag} onPointerCancel={endDrag}><span>FADE IN</span></button>
+        <button className="fade-handle fade-out-handle" data-trim-control aria-label="Drag fade out" style={{ left: `${(audioEnd - fadeOutSeconds) / safeOutputDuration * 100}%` }} onPointerDown={(event) => beginDrag("fade-out", event)} onPointerMove={continueDrag} onPointerUp={endDrag} onPointerCancel={endDrag}><span>FADE OUT</span></button>
+        {playheadPercent >= 0 && <div className="clip-playhead" style={{ left: `${playheadPercent}%` }} />}
       </div>
       </div>
 
+      <div className="source-strip-wrap">
+        <div className="source-strip-label"><span>SOURCE POSITION</span><small>Drag the purple block to choose another part of the song</small></div>
+        <div className="source-strip" ref={sourceTimelineRef} onPointerDown={(event) => { if (!(event.target as HTMLElement).closest("[data-trim-control]")) onSeek(sourceTimeAt(event.clientX)); }}>
+          <svg viewBox="0 0 100 26" preserveAspectRatio="none" aria-hidden="true"><g>{sourceBars}</g></svg>
+          <div className="source-strip-outside source-strip-before" style={{ width: `${sourceStartPercent}%` }} />
+          <div className="source-strip-outside source-strip-after" style={{ left: `${sourceEndPercent}%` }} />
+          <button className="source-selection" data-trim-control aria-label="Move source selection" style={{ left: `${sourceStartPercent}%`, width: `${sourceEndPercent - sourceStartPercent}%` }} onPointerDown={(event) => beginDrag("source-block", event)} onPointerMove={continueDrag} onPointerUp={endDrag} onPointerCancel={endDrag}><span>{preciseTime(layout.sourceStart)} → {preciseTime(layout.sourceEnd)}</span></button>
+        </div>
+      </div>
+
       <div className="clip-preset-row">
-        <span>CLIP LENGTH · 4–30 SEC</span>
+        <span>FIXED OUTPUT LENGTH · 4–30 SEC</span>
         <input
           type="range"
           min="4"
@@ -369,26 +470,21 @@ function ClipRangeEditor({
           aria-label="Clip length preset in seconds"
         />
         <output>{presetSeconds} sec</output>
-        <small>IN stays fixed; the range shifts left near the track end.</small>
+        <small>Changing this resets the frame; trimming never changes this total.</small>
       </div>
 
       <div className="clip-finishing-row">
-        <span>EDGE FINISH</span>
-        <label><span>BEFORE SILENCE</span><select aria-label="Silence before clip" value={silenceBefore} onChange={(event) => onSilenceBeforeChange(Number(event.target.value) as SilenceSeconds)}>
-          <option value="0">0 sec</option><option value="0.1">0.1 sec</option><option value="0.25">0.25 sec</option><option value="0.5">0.5 sec</option><option value="1">1 sec</option><option value="2">2 sec</option>
-        </select></label>
-        <label><span>AFTER SILENCE</span><select aria-label="Silence after clip" value={silenceAfter} onChange={(event) => onSilenceAfterChange(Number(event.target.value) as SilenceSeconds)}>
-          <option value="0">0 sec</option><option value="0.1">0.1 sec</option><option value="0.25">0.25 sec</option><option value="0.5">0.5 sec</option><option value="1">1 sec</option><option value="2">2 sec</option>
-        </select></label>
-        <label><span>EDGE FADE</span><select aria-label="Clip edge fade" value={fadeMilliseconds} onChange={(event) => onFadeChange(Number(event.target.value) as FadeMilliseconds)}>
-          <option value="0">Off</option><option value="20">20 ms</option><option value="50">50 ms</option><option value="100">100 ms</option><option value="250">250 ms</option>
-        </select></label>
-        <output>{exportDuration.toFixed(2)} sec output</output>
+        <span>PRECISE VALUES</span>
+        <label><span>LEAD SILENCE</span><input aria-label="Leading silence seconds" type="number" min="0" max={safeOutputDuration} step="0.01" value={inputTime(layout.silenceBefore)} onChange={(event) => setSilenceBefore(Number(event.target.value))} /></label>
+        <label><span>END SILENCE</span><input aria-label="Trailing silence seconds" type="number" min="0" max={safeOutputDuration} step="0.01" value={inputTime(layout.silenceAfter)} onChange={(event) => setSilenceAfter(Number(event.target.value))} /></label>
+        <label><span>FADE IN</span><input aria-label="Fade in seconds" type="number" min="0" max={contentDuration / 2} step="0.01" value={inputTime(fadeInSeconds)} onChange={(event) => onFadeInChange(Math.min(contentDuration / 2, Math.max(0, Number(event.target.value))))} /></label>
+        <label><span>FADE OUT</span><input aria-label="Fade out seconds" type="number" min="0" max={contentDuration / 2} step="0.01" value={inputTime(fadeOutSeconds)} onChange={(event) => onFadeOutChange(Math.min(contentDuration / 2, Math.max(0, Number(event.target.value))))} /></label>
+        <output>{fixedOutputDuration(layout).toFixed(2)} / {safeOutputDuration.toFixed(2)} sec</output>
       </div>
 
       <div className="clip-editor-controls">
-        <label><span>START SEC</span><input aria-label="Clip start seconds" type="number" min="0" step="0.01" value={startValue} onChange={(event) => onStartInput(event.target.value)} /></label>
-        <label><span>END SEC</span><input aria-label="Clip end seconds" type="number" min="0" step="0.01" value={endValue} onChange={(event) => onEndInput(event.target.value)} /></label>
+        <label><span>SOURCE IN</span><input aria-label="Clip start seconds" type="number" min="0" step="0.01" value={startValue} onChange={(event) => onStartInput(event.target.value)} /></label>
+        <label><span>SOURCE OUT</span><input aria-label="Clip end seconds" type="number" min="0" step="0.01" value={endValue} onChange={(event) => onEndInput(event.target.value)} /></label>
         <button className={`preview-clip ${previewing ? "active" : ""}`} disabled={safeDuration <= 0} onClick={onPreview}>{previewing ? <Pause size={13} /> : <Play size={13} fill="currentColor" />}{previewing ? "Stop preview" : "Preview clip"}</button>
         <div className="audio-export-choice">
           <select aria-label="Audio export format" value={audioFormat} onChange={(event) => onAudioFormatChange(event.target.value as AudioExportFormat)}>
@@ -439,12 +535,12 @@ export function ResultPlayer({ item, disabled, onReveal, onNotice }: ResultPlaye
   const [displayGain, setDisplayGain] = useState<WaveformGain>("auto");
   const [clipStart, setClipStart] = useState("0");
   const [clipEnd, setClipEnd] = useState("");
-  const [clipEdited, setClipEdited] = useState(false);
   const [presetSeconds, setPresetSeconds] = useState(15);
   const [previewingClip, setPreviewingClip] = useState(false);
-  const [silenceBefore, setSilenceBefore] = useState<SilenceSeconds>(0);
-  const [silenceAfter, setSilenceAfter] = useState<SilenceSeconds>(0);
-  const [fadeMilliseconds, setFadeMilliseconds] = useState<FadeMilliseconds>(50);
+  const [silenceBefore, setSilenceBefore] = useState(0);
+  const [silenceAfter, setSilenceAfter] = useState(0);
+  const [fadeInSeconds, setFadeInSeconds] = useState(0.05);
+  const [fadeOutSeconds, setFadeOutSeconds] = useState(0.05);
   const [audioFormat, setAudioFormat] = useState<AudioExportFormat>("wav");
   const [audioExportState, setAudioExportState] = useState<ExportState>("idle");
   const [videoExportState, setVideoExportState] = useState<ExportState>("idle");
@@ -457,7 +553,13 @@ export function ResultPlayer({ item, disabled, onReveal, onNotice }: ResultPlaye
     instrumental: item?.outputs?.[1],
   }), [item]);
   const activePath = tracks[track] ?? "";
-  const clipRange = parseClipRange(clipStart, clipEnd, duration) ?? { start: 0, end: Math.max(0, duration) };
+  const clipRange = parseClipRange(clipStart, clipEnd, duration) ?? { start: 0, end: Math.max(0, Math.min(duration, presetSeconds)) };
+  const clipLayout: FixedClipLayout = {
+    sourceStart: clipRange.start,
+    sourceEnd: clipRange.end,
+    silenceBefore,
+    silenceAfter,
+  };
 
   useEffect(() => backend.subscribe((event) => {
     if (event.type === "waveform" && event.requestId === waveformRequestRef.current) {
@@ -503,9 +605,12 @@ export function ResultPlayer({ item, disabled, onReveal, onNotice }: ResultPlaye
     setDisplayGain("auto");
     setClipStart("0");
     setClipEnd("");
-    setClipEdited(false);
     clipInitializedRef.current = false;
     setPresetSeconds(15);
+    setSilenceBefore(0);
+    setSilenceAfter(0);
+    setFadeInSeconds(0.05);
+    setFadeOutSeconds(0.05);
     clipPreviewRangeRef.current = null;
     setPreviewingClip(false);
     setAudioExportState("idle");
@@ -595,12 +700,11 @@ export function ResultPlayer({ item, disabled, onReveal, onNotice }: ResultPlaye
     const nextTime = audio.currentTime;
     const previewRange = clipPreviewRangeRef.current;
     if (previewRange) {
-      const fadeSeconds = fadeMilliseconds / 1000;
-      if (fadeSeconds > 0) {
-        const fadeInGain = Math.min(1, Math.max(0, (nextTime - previewRange.start) / fadeSeconds));
-        const fadeOutGain = Math.min(1, Math.max(0, (previewRange.end - nextTime) / fadeSeconds));
-        audio.volume = volume * Math.min(fadeInGain, fadeOutGain);
-      }
+      const fadeInGain = fadeInSeconds > 0
+        ? Math.min(1, Math.max(0, (nextTime - previewRange.start) / fadeInSeconds)) : 1;
+      const fadeOutGain = fadeOutSeconds > 0
+        ? Math.min(1, Math.max(0, (previewRange.end - nextTime) / fadeOutSeconds)) : 1;
+      audio.volume = volume * Math.min(fadeInGain, fadeOutGain);
       if (nextTime >= previewRange.end) {
         audio.pause();
         audio.volume = volume;
@@ -631,11 +735,27 @@ export function ResultPlayer({ item, disabled, onReveal, onNotice }: ResultPlaye
     setVolume(value);
   }
 
-  function setClipRange(start: number, end: number) {
+  function setClipLayout(next: FixedClipLayout) {
     if (previewingClip) cancelClipPreview();
-    setClipEdited(true);
-    setClipStart(inputTime(start));
-    setClipEnd(inputTime(end));
+    const sourceStart = roundTime(Math.max(0, Math.min(Math.max(0, duration - MIN_AUDIO_SECONDS), next.sourceStart)));
+    const sourceEnd = roundTime(Math.max(sourceStart + MIN_AUDIO_SECONDS, Math.min(duration, next.sourceEnd)));
+    const content = sourceEnd - sourceStart;
+    const before = roundTime(Math.max(0, Math.min(Math.max(0, presetSeconds - content), next.silenceBefore)));
+    const after = roundTime(Math.max(0, presetSeconds - content - before));
+    setClipStart(inputTime(sourceStart));
+    setClipEnd(inputTime(sourceEnd));
+    setSilenceBefore(before);
+    setSilenceAfter(after);
+    setFadeInSeconds((value) => Math.min(value, content / 2));
+    setFadeOutSeconds((value) => Math.min(value, content / 2));
+  }
+
+  function changeFadeIn(seconds: number) {
+    setFadeInSeconds(roundTime(Math.max(0, Math.min((clipRange.end - clipRange.start) / 2, seconds))));
+  }
+
+  function changeFadeOut(seconds: number) {
+    setFadeOutSeconds(roundTime(Math.max(0, Math.min((clipRange.end - clipRange.start) / 2, seconds))));
   }
 
   function initializeClip(nextDuration: number) {
@@ -644,20 +764,61 @@ export function ResultPlayer({ item, disabled, onReveal, onNotice }: ResultPlaye
     const range = clipRangeForPreset(0, presetSeconds, nextDuration);
     setClipStart(inputTime(range.start));
     setClipEnd(inputTime(range.end));
-    setClipEdited(range.end < nextDuration);
+    setSilenceBefore(0);
+    setSilenceAfter(Math.max(0, presetSeconds - (range.end - range.start)));
   }
 
   function resetClip() {
     if (previewingClip) cancelClipPreview();
-    setClipStart("0");
-    setClipEnd(inputTime(duration));
-    setClipEdited(false);
+    const range = clipRangeForPreset(clipRange.start, presetSeconds, duration);
+    setClipStart(inputTime(range.start));
+    setClipEnd(inputTime(range.end));
+    setSilenceBefore(0);
+    setSilenceAfter(Math.max(0, presetSeconds - (range.end - range.start)));
+    setFadeInSeconds(0.05);
+    setFadeOutSeconds(0.05);
   }
 
   function applyPresetSeconds(seconds: number) {
     setPresetSeconds(seconds);
     const range = clipRangeForPreset(clipRange.start, seconds, duration);
-    setClipRange(range.start, range.end);
+    setClipStart(inputTime(range.start));
+    setClipEnd(inputTime(range.end));
+    setSilenceBefore(0);
+    setSilenceAfter(Math.max(0, seconds - (range.end - range.start)));
+    setFadeInSeconds((value) => Math.min(value, (range.end - range.start) / 2));
+    setFadeOutSeconds((value) => Math.min(value, (range.end - range.start) / 2));
+  }
+
+  function changeSourceStart(value: string) {
+    if (previewingClip) cancelClipPreview();
+    if (value === "") {
+      setClipStart(value);
+      return;
+    }
+    const requested = Number(value);
+    if (!Number.isFinite(requested)) return;
+    const nextStart = Math.max(0, Math.min(clipRange.end - MIN_AUDIO_SECONDS, requested));
+    const nextEnd = Math.min(duration, nextStart + Math.min(presetSeconds - silenceBefore, clipRange.end - nextStart));
+    const content = nextEnd - nextStart;
+    setClipStart(inputTime(nextStart));
+    setClipEnd(inputTime(nextEnd));
+    setSilenceAfter(Math.max(0, presetSeconds - silenceBefore - content));
+  }
+
+  function changeSourceEnd(value: string) {
+    if (previewingClip) cancelClipPreview();
+    if (value === "") {
+      setClipEnd(value);
+      return;
+    }
+    const requested = Number(value);
+    if (!Number.isFinite(requested)) return;
+    const maximumEnd = Math.min(duration, clipRange.start + presetSeconds - silenceBefore);
+    const nextEnd = Math.max(clipRange.start + MIN_AUDIO_SECONDS, Math.min(maximumEnd, requested));
+    const content = nextEnd - clipRange.start;
+    setClipEnd(inputTime(nextEnd));
+    setSilenceAfter(Math.max(0, presetSeconds - silenceBefore - content));
   }
 
   async function previewClip() {
@@ -687,7 +848,7 @@ export function ResultPlayer({ item, disabled, onReveal, onNotice }: ResultPlaye
   async function startClipAudio(audio: HTMLAudioElement, range: { start: number; end: number }) {
     previewTimerRef.current = null;
     clipPreviewRangeRef.current = range;
-    audio.volume = fadeMilliseconds > 0 ? 0 : volume;
+    audio.volume = fadeInSeconds > 0 ? 0 : volume;
     try {
       await audio.play();
     } catch {
@@ -742,12 +903,14 @@ export function ResultPlayer({ item, disabled, onReveal, onNotice }: ResultPlaye
       type: "export_video",
       requestId,
       path: activePath,
-      startSeconds: clipEdited ? range.start : 0,
-      endSeconds: clipEdited ? range.end : null,
+      startSeconds: range.start,
+      endSeconds: range.end,
       contentDurationSeconds: range.end - range.start,
       silenceBeforeSeconds: silenceBefore,
       silenceAfterSeconds: silenceAfter,
-      fadeSeconds: fadeMilliseconds / 1000,
+      outputDurationSeconds: presetSeconds,
+      fadeInSeconds,
+      fadeOutSeconds,
     }).catch(() => {
       setVideoExportState("idle");
       onNotice("Could not start the MP4 export.");
@@ -770,12 +933,14 @@ export function ResultPlayer({ item, disabled, onReveal, onNotice }: ResultPlaye
       requestId,
       path: activePath,
       format: audioFormat,
-      startSeconds: clipEdited ? range.start : 0,
-      endSeconds: clipEdited ? range.end : null,
+      startSeconds: range.start,
+      endSeconds: range.end,
       contentDurationSeconds: range.end - range.start,
       silenceBeforeSeconds: silenceBefore,
       silenceAfterSeconds: silenceAfter,
-      fadeSeconds: fadeMilliseconds / 1000,
+      outputDurationSeconds: presetSeconds,
+      fadeInSeconds,
+      fadeOutSeconds,
     }).catch(() => {
       setAudioExportState("idle");
       onNotice("Could not start the audio export.");
@@ -848,8 +1013,8 @@ export function ResultPlayer({ item, disabled, onReveal, onNotice }: ResultPlaye
         loading={waveformLoading}
         currentTime={currentTime}
         duration={duration}
-        start={clipRange.start}
-        end={clipRange.end}
+        layout={clipLayout}
+        outputDuration={presetSeconds}
         startValue={clipStart}
         endValue={clipEnd}
         previewing={previewingClip}
@@ -859,23 +1024,21 @@ export function ResultPlayer({ item, disabled, onReveal, onNotice }: ResultPlaye
         displayGain={displayGain}
         presetSeconds={presetSeconds}
         audioFormat={audioFormat}
-        silenceBefore={silenceBefore}
-        silenceAfter={silenceAfter}
-        fadeMilliseconds={fadeMilliseconds}
+        fadeInSeconds={fadeInSeconds}
+        fadeOutSeconds={fadeOutSeconds}
         exportedAudioPath={exportedAudioPath}
         exportedVideoPath={exportedVideoPath}
-        onChange={setClipRange}
+        onLayoutChange={setClipLayout}
         onSeek={seek}
         onPreview={() => void previewClip()}
         onReset={resetClip}
-        onStartInput={(value) => { if (previewingClip) cancelClipPreview(); setClipEdited(true); setClipStart(value); }}
-        onEndInput={(value) => { if (previewingClip) cancelClipPreview(); setClipEdited(true); setClipEnd(value); }}
+        onStartInput={changeSourceStart}
+        onEndInput={changeSourceEnd}
         onDisplayGainChange={setDisplayGain}
         onPresetSeconds={applyPresetSeconds}
         onAudioFormatChange={setAudioFormat}
-        onSilenceBeforeChange={setSilenceBefore}
-        onSilenceAfterChange={setSilenceAfter}
-        onFadeChange={setFadeMilliseconds}
+        onFadeInChange={changeFadeIn}
+        onFadeOutChange={changeFadeOut}
         onExportAudio={exportAudio}
         onExportVideo={exportVideo}
         onReveal={onReveal}

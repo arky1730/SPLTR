@@ -55,6 +55,6 @@ export type BackendCommand =
   | { type: "ensure_model"; model: ModelName }
   | { type: "delete_models" }
   | { type: "waveform"; requestId: string; path: string }
-  | { type: "export_video"; requestId: string; path: string; startSeconds: number; endSeconds: number | null; contentDurationSeconds: number; silenceBeforeSeconds: number; silenceAfterSeconds: number; fadeSeconds: number }
-  | { type: "export_audio"; requestId: string; path: string; format: "wav" | "mp3"; startSeconds: number; endSeconds: number | null; contentDurationSeconds: number; silenceBeforeSeconds: number; silenceAfterSeconds: number; fadeSeconds: number }
+  | { type: "export_video"; requestId: string; path: string; startSeconds: number; endSeconds: number | null; contentDurationSeconds: number; silenceBeforeSeconds: number; silenceAfterSeconds: number; outputDurationSeconds: number; fadeInSeconds: number; fadeOutSeconds: number }
+  | { type: "export_audio"; requestId: string; path: string; format: "wav" | "mp3"; startSeconds: number; endSeconds: number | null; contentDurationSeconds: number; silenceBeforeSeconds: number; silenceAfterSeconds: number; outputDurationSeconds: number; fadeInSeconds: number; fadeOutSeconds: number }
   | { type: "shutdown" };

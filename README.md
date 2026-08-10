@@ -15,9 +15,9 @@ SPLTR is a focused Windows desktop app for separating vocals from music with Dem
 - Vocals and instrumental WAV output with collision-safe names
 - Built-in result monitor for switching between the original, vocals, and instrumental
 - Real audio waveforms with Auto or 1×/2×/4×/8× display gain that never changes audio volume
-- Editor-style waveform trimming with draggable IN/OUT handles, movable selection, 0.01-second precision, and 4–30 second presets
-- Fit/2×/4×/8×/16× timeline zoom with horizontal scrolling for accurate edge placement
-- Optional silence before/after a clip plus 20–250 ms edge fades to avoid abrupt cuts
+- Fixed 4–30 second output frame with large draggable trim handles and a movable audio block
+- Trimming an edge turns the unused part of that same frame into visible silence instead of extending the export
+- Separate draggable fade-in/fade-out handles, full-track source positioning, Fit/2×/4×/8×/16× zoom, and 0.01-second fields
 - Selected-track WAV/MP3 clip export and 854×480 black-screen MP4 export
 - Compact add-audio control after files enter the queue, while window-wide drag and drop stays active
 - One-click shortcuts to reveal completed stems in File Explorer

@@ -74,7 +74,9 @@ def build_black_video_command(
     content_duration_seconds: float | None = None,
     silence_before_seconds: float = 0,
     silence_after_seconds: float = 0,
-    fade_seconds: float = 0,
+    output_duration_seconds: float | None = None,
+    fade_in_seconds: float = 0,
+    fade_out_seconds: float = 0,
 ) -> list[str]:
     command = [
         str(ffmpeg), "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
@@ -92,7 +94,8 @@ def build_black_video_command(
         "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k",
     ])
     audio_filter = build_export_audio_filter(
-        input_duration, silence_before_seconds, silence_after_seconds, fade_seconds
+        input_duration, silence_before_seconds, silence_after_seconds,
+        output_duration_seconds, fade_in_seconds, fade_out_seconds,
     )
     if audio_filter:
         command.extend(["-af", audio_filter])
@@ -109,7 +112,9 @@ def export_black_video(
     content_duration_seconds: float | None = None,
     silence_before_seconds: float = 0,
     silence_after_seconds: float = 0,
-    fade_seconds: float = 0,
+    output_duration_seconds: float | None = None,
+    fade_in_seconds: float = 0,
+    fade_out_seconds: float = 0,
 ) -> Path:
     if not source.exists():
         raise MediaToolError("The selected audio file no longer exists.")
@@ -118,7 +123,8 @@ def export_black_video(
     if end_seconds is not None and (not math.isfinite(end_seconds) or end_seconds <= start_seconds):
         raise MediaToolError("End time must be greater than start time.")
     _validate_export_effects(
-        content_duration_seconds, silence_before_seconds, silence_after_seconds, fade_seconds
+        content_duration_seconds, silence_before_seconds, silence_after_seconds,
+        output_duration_seconds, fade_in_seconds, fade_out_seconds,
     )
 
     clipped = start_seconds > 0 or end_seconds is not None
@@ -127,7 +133,8 @@ def export_black_video(
     output = available_video_path(source, clipped=clipped, output_dir=directory)
     command = build_black_video_command(
         ffmpeg, source, output, start_seconds, end_seconds, content_duration_seconds,
-        silence_before_seconds, silence_after_seconds, fade_seconds,
+        silence_before_seconds, silence_after_seconds, output_duration_seconds,
+        fade_in_seconds, fade_out_seconds,
     )
     try:
         result = subprocess.run(
@@ -156,7 +163,9 @@ def build_audio_export_command(
     content_duration_seconds: float | None = None,
     silence_before_seconds: float = 0,
     silence_after_seconds: float = 0,
-    fade_seconds: float = 0,
+    output_duration_seconds: float | None = None,
+    fade_in_seconds: float = 0,
+    fade_out_seconds: float = 0,
 ) -> list[str]:
     command = [str(ffmpeg), "-nostdin", "-hide_banner", "-loglevel", "error", "-y"]
     if start_seconds > 0:
@@ -167,7 +176,8 @@ def build_audio_export_command(
     command.extend(["-i", str(source)])
     command.extend(["-map", "0:a:0", "-vn"])
     audio_filter = build_export_audio_filter(
-        input_duration, silence_before_seconds, silence_after_seconds, fade_seconds
+        input_duration, silence_before_seconds, silence_after_seconds,
+        output_duration_seconds, fade_in_seconds, fade_out_seconds,
     )
     if audio_filter:
         command.extend(["-af", audio_filter])
@@ -189,7 +199,9 @@ def export_audio_clip(
     content_duration_seconds: float | None = None,
     silence_before_seconds: float = 0,
     silence_after_seconds: float = 0,
-    fade_seconds: float = 0,
+    output_duration_seconds: float | None = None,
+    fade_in_seconds: float = 0,
+    fade_out_seconds: float = 0,
 ) -> Path:
     if not source.exists():
         raise MediaToolError("The selected audio file no longer exists.")
@@ -200,7 +212,8 @@ def export_audio_clip(
     if end_seconds is not None and (not math.isfinite(end_seconds) or end_seconds <= start_seconds):
         raise MediaToolError("End time must be greater than start time.")
     _validate_export_effects(
-        content_duration_seconds, silence_before_seconds, silence_after_seconds, fade_seconds
+        content_duration_seconds, silence_before_seconds, silence_after_seconds,
+        output_duration_seconds, fade_in_seconds, fade_out_seconds,
     )
 
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -208,7 +221,8 @@ def export_audio_clip(
     output = available_audio_export_path(source, output_dir, audio_format, clipped)
     command = build_audio_export_command(
         ffmpeg, source, output, audio_format, start_seconds, end_seconds,
-        content_duration_seconds, silence_before_seconds, silence_after_seconds, fade_seconds,
+        content_duration_seconds, silence_before_seconds, silence_after_seconds,
+        output_duration_seconds, fade_in_seconds, fade_out_seconds,
     )
     try:
         result = subprocess.run(
@@ -231,19 +245,27 @@ def build_export_audio_filter(
     content_duration_seconds: float | None,
     silence_before_seconds: float,
     silence_after_seconds: float,
-    fade_seconds: float,
+    output_duration_seconds: float | None,
+    fade_in_seconds: float,
+    fade_out_seconds: float,
 ) -> str:
     filters: list[str] = []
-    if fade_seconds > 0 and content_duration_seconds is not None:
-        effective_fade = min(fade_seconds, content_duration_seconds / 2)
-        fade_out_start = max(0, content_duration_seconds - effective_fade)
-        filters.extend([
-            f"afade=t=in:st=0:d={effective_fade:.3f}",
-            f"afade=t=out:st={fade_out_start:.3f}:d={effective_fade:.3f}",
-        ])
+    if content_duration_seconds is not None:
+        effective_fade_in = min(fade_in_seconds, content_duration_seconds / 2)
+        effective_fade_out = min(fade_out_seconds, content_duration_seconds / 2)
+        if effective_fade_in > 0:
+            filters.append(f"afade=t=in:st=0:d={effective_fade_in:.3f}")
+        if effective_fade_out > 0:
+            fade_out_start = max(0, content_duration_seconds - effective_fade_out)
+            filters.append(f"afade=t=out:st={fade_out_start:.3f}:d={effective_fade_out:.3f}")
     if silence_before_seconds > 0:
         filters.append(f"adelay={round(silence_before_seconds * 1000)}:all=1")
-    if silence_after_seconds > 0:
+    if output_duration_seconds is not None:
+        filters.extend([
+            f"apad=whole_dur={output_duration_seconds:.3f}",
+            f"atrim=duration={output_duration_seconds:.3f}",
+        ])
+    elif silence_after_seconds > 0:
         filters.append(f"apad=pad_dur={silence_after_seconds:.3f}")
     return ",".join(filters)
 
@@ -252,12 +274,21 @@ def _validate_export_effects(
     content_duration_seconds: float | None,
     silence_before_seconds: float,
     silence_after_seconds: float,
-    fade_seconds: float,
+    output_duration_seconds: float | None,
+    fade_in_seconds: float,
+    fade_out_seconds: float,
 ) -> None:
-    values = [silence_before_seconds, silence_after_seconds, fade_seconds]
+    values = [silence_before_seconds, silence_after_seconds, fade_in_seconds, fade_out_seconds]
     if any(not math.isfinite(value) or value < 0 for value in values):
         raise MediaToolError("Silence and fade durations must be zero or greater.")
     if content_duration_seconds is not None and (
         not math.isfinite(content_duration_seconds) or content_duration_seconds <= 0
     ):
         raise MediaToolError("Clip duration must be greater than zero.")
+    if output_duration_seconds is not None:
+        if not math.isfinite(output_duration_seconds) or output_duration_seconds <= 0:
+            raise MediaToolError("Output duration must be greater than zero.")
+        if content_duration_seconds is not None:
+            composed_duration = content_duration_seconds + silence_before_seconds + silence_after_seconds
+            if abs(composed_duration - output_duration_seconds) > 0.03:
+                raise MediaToolError("Audio and silence must exactly fill the fixed output duration.")

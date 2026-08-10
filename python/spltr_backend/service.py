@@ -76,7 +76,9 @@ class SeparationService:
                 command.get("contentDurationSeconds"),
                 command.get("silenceBeforeSeconds", 0),
                 command.get("silenceAfterSeconds", 0),
-                command.get("fadeSeconds", 0),
+                command.get("outputDurationSeconds"),
+                command.get("fadeInSeconds", 0),
+                command.get("fadeOutSeconds", 0),
             )
         elif kind == "export_audio":
             self.start_audio_export(
@@ -88,7 +90,9 @@ class SeparationService:
                 command.get("contentDurationSeconds"),
                 command.get("silenceBeforeSeconds", 0),
                 command.get("silenceAfterSeconds", 0),
-                command.get("fadeSeconds", 0),
+                command.get("outputDurationSeconds"),
+                command.get("fadeInSeconds", 0),
+                command.get("fadeOutSeconds", 0),
             )
         elif kind == "shutdown":
             self.cancel.set()
@@ -352,7 +356,9 @@ class SeparationService:
         raw_content_duration: object,
         raw_silence_before: object,
         raw_silence_after: object,
-        raw_fade: object,
+        raw_output_duration: object,
+        raw_fade_in: object,
+        raw_fade_out: object,
     ) -> None:
         if not request_id or not raw_path:
             raise ValueError("Video export requires a requestId and path")
@@ -368,7 +374,9 @@ class SeparationService:
             content_duration = None if raw_content_duration is None else float(raw_content_duration)
             silence_before = float(raw_silence_before)
             silence_after = float(raw_silence_after)
-            fade_seconds = float(raw_fade)
+            output_duration = None if raw_output_duration is None else float(raw_output_duration)
+            fade_in = float(raw_fade_in)
+            fade_out = float(raw_fade_out)
         except (TypeError, ValueError) as exc:
             raise ValueError("Video export times must be numbers") from exc
 
@@ -387,7 +395,9 @@ class SeparationService:
                     content_duration_seconds=content_duration,
                     silence_before_seconds=silence_before,
                     silence_after_seconds=silence_after,
-                    fade_seconds=fade_seconds,
+                    output_duration_seconds=output_duration,
+                    fade_in_seconds=fade_in,
+                    fade_out_seconds=fade_out,
                 )
                 self.writer.emit(
                     "export_video", requestId=request_id, state="completed", path=str(output)
@@ -418,7 +428,9 @@ class SeparationService:
         raw_content_duration: object,
         raw_silence_before: object,
         raw_silence_after: object,
-        raw_fade: object,
+        raw_output_duration: object,
+        raw_fade_in: object,
+        raw_fade_out: object,
     ) -> None:
         if not request_id or not raw_path:
             raise ValueError("Audio export requires a requestId and path")
@@ -437,7 +449,9 @@ class SeparationService:
             content_duration = None if raw_content_duration is None else float(raw_content_duration)
             silence_before = float(raw_silence_before)
             silence_after = float(raw_silence_after)
-            fade_seconds = float(raw_fade)
+            output_duration = None if raw_output_duration is None else float(raw_output_duration)
+            fade_in = float(raw_fade_in)
+            fade_out = float(raw_fade_out)
         except (TypeError, ValueError) as exc:
             raise ValueError("Audio export times must be numbers") from exc
 
@@ -452,7 +466,8 @@ class SeparationService:
                     raise MediaToolError("Choose an output folder before exporting.")
                 output = export_audio_clip(
                     self.ffmpeg, source, output_dir, selected_format, start_seconds, end_seconds,
-                    content_duration, silence_before, silence_after, fade_seconds,
+                    content_duration, silence_before, silence_after, output_duration,
+                    fade_in, fade_out,
                 )
                 self.writer.emit(
                     "export_audio", requestId=request_id, state="completed", path=str(output),
