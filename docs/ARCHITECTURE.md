@@ -20,11 +20,11 @@ The React layer owns interaction and presentation state. Rust owns the applicati
 
 The host starts `python.exe -u bootstrap.py`, writes one JSON command per line to stdin, and forwards each JSON event from stdout to a Tauri `backend-event`. Human-readable diagnostics go to stderr so they cannot corrupt IPC.
 
-Commands include `configure`, `scan`, `ensure_model`, `start_queue`, `cancel_queue`, `delete_models`, and `shutdown`. Events include `ready`, device changes, scan results, queue items, download state, completion, and recoverable/fatal errors. Shared TypeScript types are in `src/types.ts`; backend parsing is deliberately tolerant so protocol fields can be added later.
+Commands include `configure`, `scan`, `ensure_model`, `start_queue`, `cancel_queue`, `delete_models`, `waveform`, `export_audio`, `export_video`, and `shutdown`. Events include `ready`, device changes, scan results, queue items, download state, waveform/export state, completion, and recoverable/fatal errors. Shared TypeScript types are in `src/types.ts`; backend parsing is deliberately tolerant so protocol fields can be added later.
 
 Completed queue items expose their original path and paired stem output paths to the React result monitor. Tauri's scoped asset protocol lets the webview play these local files directly, while the `reveal_in_folder` command opens File Explorer with the selected output highlighted.
 
-Waveforms are reduced to a small peak array by asking bundled FFmpeg for low-rate mono float PCM; full audio is never loaded into the React process. Video export uses the same FFmpeg binary to combine the vocal WAV with an 854×480 black color source, optionally applying a start/end range. Both utilities run on background threads and report results through the existing JSON event protocol.
+Waveforms are reduced to a small peak array by asking bundled FFmpeg for low-rate mono float PCM; full audio is never loaded into the React process. Display gain is a React-only transform over this peak array and never touches audio samples. Audio export uses FFmpeg to create 24-bit WAV or 320 kbps MP3 clips. Video export combines the selected track with an 854×480 black color source. Both exporters accept an optional start/end range, follow the configured destination, use collision-safe names, and run on a background thread.
 
 ## First launch and installer size
 

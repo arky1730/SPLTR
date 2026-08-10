@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "spltr-backend"
-version = "0.4.0"
+version = "0.5.0"
 description = "Local Demucs processing backend for SPLTR"
 requires-python = ">=3.12"
 dependencies = ["demucs==4.1.0", "numpy==1.26.4"]

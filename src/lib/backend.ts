@@ -112,6 +112,16 @@ class BackendBridge {
         path: command.path.replace(/\.wav$/i, command.endSeconds === null ? ".mp4" : "_clip.mp4"),
       }), 1200);
     }
+    if (command.type === "export_audio") {
+      this.emit({ type: "export_audio", requestId: command.requestId, state: "started", format: command.format });
+      window.setTimeout(() => this.emit({
+        type: "export_audio",
+        requestId: command.requestId,
+        state: "completed",
+        format: command.format,
+        path: command.path.replace(/\.[^.]+$/i, command.endSeconds === null ? `_export.${command.format}` : `_clip.${command.format}`),
+      }), 900);
+    }
     if (command.type === "start_queue") this.simulateQueue(command.items);
   }
 

@@ -43,6 +43,7 @@ export type BackendEvent =
   | { type: "runtime_download"; state: "started" | "progress" | "completed" | "failed"; progress: number; message?: string }
   | { type: "waveform"; requestId: string; path: string; peaks: number[]; message?: string }
   | { type: "export_video"; requestId: string; state: "started" | "completed" | "failed"; path?: string; message?: string }
+  | { type: "export_audio"; requestId: string; state: "started" | "completed" | "failed"; path?: string; format?: "wav" | "mp3"; message?: string }
   | { type: "cache_cleared" }
   | { type: "error"; code: string; message: string; recoverable: boolean };
 
@@ -55,4 +56,5 @@ export type BackendCommand =
   | { type: "delete_models" }
   | { type: "waveform"; requestId: string; path: string }
   | { type: "export_video"; requestId: string; path: string; startSeconds: number; endSeconds: number | null }
+  | { type: "export_audio"; requestId: string; path: string; format: "wav" | "mp3"; startSeconds: number; endSeconds: number | null }
   | { type: "shutdown" };

@@ -6,8 +6,9 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+from typing import Literal
 
-from .naming import available_video_path
+from .naming import available_audio_export_path, available_video_path
 
 
 class MediaToolError(RuntimeError):
@@ -94,16 +95,19 @@ def export_black_video(
     source: Path,
     start_seconds: float = 0,
     end_seconds: float | None = None,
+    output_dir: Path | None = None,
 ) -> Path:
     if not source.exists():
-        raise MediaToolError("The vocal WAV file no longer exists.")
+        raise MediaToolError("The selected audio file no longer exists.")
     if not math.isfinite(start_seconds) or start_seconds < 0:
         raise MediaToolError("Start time must be zero or greater.")
     if end_seconds is not None and (not math.isfinite(end_seconds) or end_seconds <= start_seconds):
         raise MediaToolError("End time must be greater than start time.")
 
     clipped = start_seconds > 0 or end_seconds is not None
-    output = available_video_path(source, clipped=clipped)
+    directory = output_dir or source.parent
+    directory.mkdir(parents=True, exist_ok=True)
+    output = available_video_path(source, clipped=clipped, output_dir=directory)
     command = build_black_video_command(ffmpeg, source, output, start_seconds, end_seconds)
     try:
         result = subprocess.run(
@@ -119,4 +123,67 @@ def export_black_video(
         output.unlink(missing_ok=True)
         detail = result.stderr.decode("utf-8", errors="replace").strip()
         raise MediaToolError(detail or "FFmpeg could not create the MP4 file.")
+    return output
+
+
+def build_audio_export_command(
+    ffmpeg: Path,
+    source: Path,
+    output: Path,
+    audio_format: Literal["wav", "mp3"],
+    start_seconds: float,
+    end_seconds: float | None,
+) -> list[str]:
+    command = [str(ffmpeg), "-nostdin", "-hide_banner", "-loglevel", "error", "-y"]
+    if start_seconds > 0:
+        command.extend(["-ss", f"{start_seconds:.3f}"])
+    command.extend(["-i", str(source)])
+    if end_seconds is not None:
+        command.extend(["-t", f"{end_seconds - start_seconds:.3f}"])
+    command.extend(["-map", "0:a:0", "-vn"])
+    if audio_format == "wav":
+        command.extend(["-c:a", "pcm_s24le"])
+    else:
+        command.extend(["-c:a", "libmp3lame", "-b:a", "320k"])
+    command.append(str(output))
+    return command
+
+
+def export_audio_clip(
+    ffmpeg: Path,
+    source: Path,
+    output_dir: Path,
+    audio_format: Literal["wav", "mp3"],
+    start_seconds: float = 0,
+    end_seconds: float | None = None,
+) -> Path:
+    if not source.exists():
+        raise MediaToolError("The selected audio file no longer exists.")
+    if audio_format not in {"wav", "mp3"}:
+        raise MediaToolError("Audio export format must be WAV or MP3.")
+    if not math.isfinite(start_seconds) or start_seconds < 0:
+        raise MediaToolError("Start time must be zero or greater.")
+    if end_seconds is not None and (not math.isfinite(end_seconds) or end_seconds <= start_seconds):
+        raise MediaToolError("End time must be greater than start time.")
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    clipped = start_seconds > 0 or end_seconds is not None
+    output = available_audio_export_path(source, output_dir, audio_format, clipped)
+    command = build_audio_export_command(
+        ffmpeg, source, output, audio_format, start_seconds, end_seconds
+    )
+    try:
+        result = subprocess.run(
+            command,
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            creationflags=_creation_flags(),
+        )
+    except OSError as exc:
+        raise MediaToolError("The bundled FFmpeg component could not be started.") from exc
+    if result.returncode != 0:
+        output.unlink(missing_ok=True)
+        detail = result.stderr.decode("utf-8", errors="replace").strip()
+        raise MediaToolError(detail or "FFmpeg could not create the audio export.")
     return output

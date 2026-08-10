@@ -1,6 +1,10 @@
 from pathlib import Path
 
-from spltr_backend.naming import available_stem_paths, available_video_path
+from spltr_backend.naming import (
+    available_audio_export_path,
+    available_stem_paths,
+    available_video_path,
+)
 
 
 def test_uses_plain_names_when_available(tmp_path: Path) -> None:
@@ -22,3 +26,15 @@ def test_video_path_uses_clip_suffix_and_never_overwrites(tmp_path: Path) -> Non
     (tmp_path / "song_vocals_clip.mp4").touch()
     assert available_video_path(vocals, clipped=True).name == "song_vocals_clip (1).mp4"
     assert available_video_path(vocals, clipped=False).name == "song_vocals.mp4"
+
+
+def test_video_path_can_use_custom_output_directory(tmp_path: Path) -> None:
+    source = Path("C:/Music/song_vocals.wav")
+    assert available_video_path(source, clipped=True, output_dir=tmp_path) == tmp_path / "song_vocals_clip.mp4"
+
+
+def test_audio_export_uses_format_suffix_and_never_overwrites(tmp_path: Path) -> None:
+    source = Path("C:/Music/song_vocals.wav")
+    (tmp_path / "song_vocals_clip.mp3").touch()
+    assert available_audio_export_path(source, tmp_path, "mp3", clipped=True).name == "song_vocals_clip (1).mp3"
+    assert available_audio_export_path(source, tmp_path, "wav", clipped=False).name == "song_vocals_export.wav"

@@ -7,7 +7,7 @@ import shutil
 import sys
 import threading
 import time
-from typing import Any
+from typing import Any, Literal, cast
 
 import torch
 
@@ -15,7 +15,7 @@ from .audio import decodable_audio
 from .device import detect_device
 from .errors import ProcessingError
 from .logging_setup import configure_logging
-from .media_tools import MediaToolError, export_black_video, extract_waveform
+from .media_tools import MediaToolError, export_audio_clip, export_black_video, extract_waveform
 from .models import DemucsModel, SeparationModel, StemOutputs
 from .naming import available_stem_paths
 from .protocol import EventWriter, parse_command
@@ -71,6 +71,14 @@ class SeparationService:
             self.start_video_export(
                 str(command.get("requestId", "")),
                 str(command.get("path", "")),
+                command.get("startSeconds", 0),
+                command.get("endSeconds"),
+            )
+        elif kind == "export_audio":
+            self.start_audio_export(
+                str(command.get("requestId", "")),
+                str(command.get("path", "")),
+                str(command.get("format", "wav")),
                 command.get("startSeconds", 0),
                 command.get("endSeconds"),
             )
@@ -351,8 +359,15 @@ class SeparationService:
         def export() -> None:
             self.writer.emit("export_video", requestId=request_id, state="started")
             try:
+                with self._settings_lock:
+                    settings = self.settings
+                source = Path(raw_path)
+                output_dir = source.parent if settings.output_mode == "source" else settings.output_folder
+                if output_dir is None:
+                    raise MediaToolError("Choose an output folder before exporting.")
                 output = export_black_video(
-                    self.ffmpeg, Path(raw_path), start_seconds=start_seconds, end_seconds=end_seconds
+                    self.ffmpeg, source, start_seconds=start_seconds,
+                    end_seconds=end_seconds, output_dir=output_dir,
                 )
                 self.writer.emit(
                     "export_video", requestId=request_id, state="completed", path=str(output)
@@ -371,6 +386,63 @@ class SeparationService:
                 )
 
         self.export_thread = threading.Thread(target=export, name="video-export", daemon=True)
+        self.export_thread.start()
+
+    def start_audio_export(
+        self,
+        request_id: str,
+        raw_path: str,
+        audio_format: str,
+        raw_start: object,
+        raw_end: object,
+    ) -> None:
+        if not request_id or not raw_path:
+            raise ValueError("Audio export requires a requestId and path")
+        if audio_format not in {"wav", "mp3"}:
+            raise ValueError("Audio export format must be wav or mp3")
+        selected_format = cast(Literal["wav", "mp3"], audio_format)
+        if self.export_thread and self.export_thread.is_alive():
+            self.writer.emit(
+                "export_audio", requestId=request_id, state="failed",
+                message="Another export is already running.",
+            )
+            return
+        try:
+            start_seconds = float(raw_start)
+            end_seconds = None if raw_end is None else float(raw_end)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Audio export times must be numbers") from exc
+
+        def export() -> None:
+            self.writer.emit("export_audio", requestId=request_id, state="started")
+            try:
+                with self._settings_lock:
+                    settings = self.settings
+                source = Path(raw_path)
+                output_dir = source.parent if settings.output_mode == "source" else settings.output_folder
+                if output_dir is None:
+                    raise MediaToolError("Choose an output folder before exporting.")
+                output = export_audio_clip(
+                    self.ffmpeg, source, output_dir, selected_format, start_seconds, end_seconds
+                )
+                self.writer.emit(
+                    "export_audio", requestId=request_id, state="completed", path=str(output),
+                    format=selected_format,
+                )
+                self.logger.info("Exported %s audio clip to %s", selected_format.upper(), output)
+            except MediaToolError as exc:
+                self.logger.warning("Audio export failed for %s: %s", raw_path, exc)
+                self.writer.emit(
+                    "export_audio", requestId=request_id, state="failed", message=str(exc)
+                )
+            except Exception:
+                self.logger.exception("Unexpected audio export failure for %s", raw_path)
+                self.writer.emit(
+                    "export_audio", requestId=request_id, state="failed",
+                    message="An unexpected error stopped the audio export.",
+                )
+
+        self.export_thread = threading.Thread(target=export, name="audio-export", daemon=True)
         self.export_thread.start()
 
     def _model_cached(self, model_name: str) -> bool:

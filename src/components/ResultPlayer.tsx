@@ -2,6 +2,7 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import {
   AudioWaveform,
   Disc3,
+  FileAudio2,
   FolderOpen,
   LoaderCircle,
   Mic2,
@@ -20,6 +21,23 @@ import type { QueueItem } from "../types";
 
 type PreviewTrack = "original" | "vocals" | "instrumental";
 type ExportState = "idle" | "exporting" | "completed";
+export type WaveformGain = "auto" | 1 | 2 | 4 | 8;
+type AudioExportFormat = "wav" | "mp3";
+
+export function adjustWaveformPeaks(peaks: number[], gain: WaveformGain): number[] {
+  return peaks.map((peak) => {
+    const safePeak = Math.min(1, Math.max(0, peak));
+    if (gain === "auto") return Math.min(1, Math.pow(safePeak, 0.55));
+    return Math.min(1, safePeak * gain);
+  });
+}
+
+export function clipRangeForPreset(start: number, seconds: number, duration: number): { start: number; end: number } {
+  const safeDuration = Math.max(0, duration);
+  const length = Math.min(Math.max(0.1, seconds), safeDuration);
+  const safeStart = Math.min(Math.max(0, start), Math.max(0, safeDuration - length));
+  return { start: safeStart, end: safeStart + length };
+}
 
 export function formatPlayerTime(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
@@ -55,13 +73,14 @@ interface WaveformTimelineProps {
   loading: boolean;
   currentTime: number;
   duration: number;
+  displayGain: WaveformGain;
   onSeek: (seconds: number) => void;
 }
 
-function WaveformTimeline({ peaks, loading, currentTime, duration, onSeek }: WaveformTimelineProps) {
+function WaveformTimeline({ peaks, loading, currentTime, duration, displayGain, onSeek }: WaveformTimelineProps) {
   const clipId = `played-${useId().replace(/:/g, "")}`;
   const displayPeaks = peaks.length > 0
-    ? peaks
+    ? adjustWaveformPeaks(peaks, displayGain)
     : Array.from({ length: 96 }, (_, index) => loading ? 0.12 + Math.abs(Math.sin(index * 0.41)) * 0.17 : 0.04);
   const barWidth = 100 / displayPeaks.length;
   const progress = duration > 0 ? Math.min(1, currentTime / duration) : 0;
@@ -101,16 +120,25 @@ interface ClipRangeEditorProps {
   startValue: string;
   endValue: string;
   previewing: boolean;
-  exporting: boolean;
+  exportingAudio: boolean;
+  exportingVideo: boolean;
   disabled: boolean;
-  exportedPath: string | null;
+  displayGain: WaveformGain;
+  presetSeconds: number;
+  audioFormat: AudioExportFormat;
+  exportedAudioPath: string | null;
+  exportedVideoPath: string | null;
   onChange: (start: number, end: number) => void;
   onSeek: (seconds: number) => void;
   onPreview: () => void;
   onReset: () => void;
   onStartInput: (value: string) => void;
   onEndInput: (value: string) => void;
-  onExport: () => void;
+  onDisplayGainChange: (gain: WaveformGain) => void;
+  onPresetSeconds: (seconds: number) => void;
+  onAudioFormatChange: (format: AudioExportFormat) => void;
+  onExportAudio: () => void;
+  onExportVideo: () => void;
   onReveal: (path: string) => void;
 }
 
@@ -126,23 +154,32 @@ function ClipRangeEditor({
   startValue,
   endValue,
   previewing,
-  exporting,
+  exportingAudio,
+  exportingVideo,
   disabled,
-  exportedPath,
+  displayGain,
+  presetSeconds,
+  audioFormat,
+  exportedAudioPath,
+  exportedVideoPath,
   onChange,
   onSeek,
   onPreview,
   onReset,
   onStartInput,
   onEndInput,
-  onExport,
+  onDisplayGainChange,
+  onPresetSeconds,
+  onAudioFormatChange,
+  onExportAudio,
+  onExportVideo,
   onReveal,
 }: ClipRangeEditorProps) {
   const timelineRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ target: DragTarget; originTime: number; start: number; end: number } | null>(null);
   const selectedClipId = `selected-${useId().replace(/:/g, "")}`;
   const displayPeaks = peaks.length > 0
-    ? peaks
+    ? adjustWaveformPeaks(peaks, displayGain)
     : Array.from({ length: 140 }, (_, index) => loading ? 0.14 + Math.abs(Math.sin(index * 0.39)) * 0.2 : 0.04);
   const barWidth = 100 / displayPeaks.length;
   const safeDuration = Math.max(duration, 0);
@@ -208,7 +245,21 @@ function ClipRangeEditor({
   return (
     <div className="clip-editor">
       <div className="clip-editor-head">
-        <div className="export-label"><Video size={15} /><span><strong>Vocal video clip</strong><small>Drag either edge · drag the middle to move</small></span></div>
+        <div className="export-label"><Scissors size={15} /><span><strong>Clip editor</strong><small>Drag either edge · drag the middle to move</small></span></div>
+        <label className="waveform-gain">
+          <span>WAVE DISPLAY</span>
+          <select
+            aria-label="Waveform display gain"
+            value={displayGain}
+            onChange={(event) => onDisplayGainChange(event.target.value === "auto" ? "auto" : Number(event.target.value) as WaveformGain)}
+          >
+            <option value="auto">Auto</option>
+            <option value="1">1×</option>
+            <option value="2">2×</option>
+            <option value="4">4×</option>
+            <option value="8">8×</option>
+          </select>
+        </label>
         <div className="clip-summary"><span>{preciseTime(start)}</span><i>→</i><span>{preciseTime(end)}</span><strong>{selectionDuration.toFixed(1)} sec</strong></div>
         <button className="reset-clip" onClick={onReset}><RotateCcw size={12} /> Full track</button>
       </div>
@@ -269,16 +320,41 @@ function ClipRangeEditor({
         <div className="clip-playhead" style={{ left: `${playheadPercent}%` }} />
       </div>
 
+      <div className="clip-preset-row">
+        <span>CLIP LENGTH · 4–30 SEC</span>
+        <input
+          type="range"
+          min="4"
+          max="30"
+          step="1"
+          value={presetSeconds}
+          onChange={(event) => onPresetSeconds(Number(event.target.value))}
+          aria-label="Clip length preset in seconds"
+        />
+        <output>{presetSeconds} sec</output>
+        <small>IN stays fixed; the range shifts left near the track end.</small>
+      </div>
+
       <div className="clip-editor-controls">
         <label><span>START SEC</span><input aria-label="Clip start seconds" type="number" min="0" step="0.1" value={startValue} onChange={(event) => onStartInput(event.target.value)} /></label>
         <label><span>END SEC</span><input aria-label="Clip end seconds" type="number" min="0" step="0.1" value={endValue} onChange={(event) => onEndInput(event.target.value)} /></label>
         <button className={`preview-clip ${previewing ? "active" : ""}`} disabled={safeDuration <= 0} onClick={onPreview}>{previewing ? <Pause size={13} /> : <Play size={13} fill="currentColor" />}{previewing ? "Stop preview" : "Preview clip"}</button>
-        <span className="video-spec">854×480 · H.264/AAC</span>
-        <button className="export-button" disabled={disabled || exporting || safeDuration <= 0} onClick={onExport}>
-          {exporting ? <LoaderCircle className="spin" size={14} /> : <Scissors size={14} />}
-          {exporting ? "Exporting" : "Export MP4"}
+        <div className="audio-export-choice">
+          <select aria-label="Audio export format" value={audioFormat} onChange={(event) => onAudioFormatChange(event.target.value as AudioExportFormat)}>
+            <option value="wav">WAV</option>
+            <option value="mp3">MP3</option>
+          </select>
+          <button className="export-button audio-export" disabled={disabled || exportingAudio || exportingVideo || safeDuration <= 0} onClick={onExportAudio}>
+            {exportingAudio ? <LoaderCircle className="spin" size={14} /> : <FileAudio2 size={14} />}
+            {exportingAudio ? "Exporting" : "Export audio"}
+          </button>
+          {exportedAudioPath && <button className="export-folder" aria-label="Show exported audio in folder" onClick={() => onReveal(exportedAudioPath)}><FolderOpen size={14} /></button>}
+        </div>
+        <button className="export-button video-export" disabled={disabled || exportingAudio || exportingVideo || safeDuration <= 0} onClick={onExportVideo}>
+          {exportingVideo ? <LoaderCircle className="spin" size={14} /> : <Video size={14} />}
+          {exportingVideo ? "Exporting" : "Black MP4"}
         </button>
-        {exportedPath && <button className="export-folder" aria-label="Show exported MP4 in folder" onClick={() => onReveal(exportedPath)}><FolderOpen size={14} /></button>}
+        {exportedVideoPath && <button className="export-folder" aria-label="Show exported MP4 in folder" onClick={() => onReveal(exportedVideoPath)}><FolderOpen size={14} /></button>}
       </div>
     </div>
   );
@@ -296,8 +372,10 @@ export function ResultPlayer({ item, disabled, onReveal, onNotice }: ResultPlaye
   const resumeTimeRef = useRef(0);
   const resumePlaybackRef = useRef(false);
   const waveformRequestRef = useRef("");
-  const exportRequestRef = useRef("");
+  const videoExportRequestRef = useRef("");
+  const audioExportRequestRef = useRef("");
   const clipPreviewRangeRef = useRef<{ start: number; end: number } | null>(null);
+  const clipInitializedRef = useRef(false);
   const [track, setTrack] = useState<PreviewTrack>("vocals");
   const [playing, setPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -306,12 +384,17 @@ export function ResultPlayer({ item, disabled, onReveal, onNotice }: ResultPlaye
   const [audioError, setAudioError] = useState(false);
   const [waveform, setWaveform] = useState<number[]>([]);
   const [waveformLoading, setWaveformLoading] = useState(false);
+  const [displayGain, setDisplayGain] = useState<WaveformGain>("auto");
   const [clipStart, setClipStart] = useState("0");
   const [clipEnd, setClipEnd] = useState("");
   const [clipEdited, setClipEdited] = useState(false);
+  const [presetSeconds, setPresetSeconds] = useState(15);
   const [previewingClip, setPreviewingClip] = useState(false);
-  const [exportState, setExportState] = useState<ExportState>("idle");
-  const [exportedPath, setExportedPath] = useState<string | null>(null);
+  const [audioFormat, setAudioFormat] = useState<AudioExportFormat>("wav");
+  const [audioExportState, setAudioExportState] = useState<ExportState>("idle");
+  const [videoExportState, setVideoExportState] = useState<ExportState>("idle");
+  const [exportedAudioPath, setExportedAudioPath] = useState<string | null>(null);
+  const [exportedVideoPath, setExportedVideoPath] = useState<string | null>(null);
 
   const tracks = useMemo(() => ({
     original: item?.path,
@@ -326,19 +409,31 @@ export function ResultPlayer({ item, disabled, onReveal, onNotice }: ResultPlaye
       setWaveform(event.peaks);
       setWaveformLoading(false);
     }
-    if (event.type === "export_video" && event.requestId === exportRequestRef.current) {
-      if (event.state === "started") setExportState("exporting");
+    if (event.type === "export_video" && event.requestId === videoExportRequestRef.current) {
+      if (event.state === "started") setVideoExportState("exporting");
       if (event.state === "completed" && event.path) {
-        setExportState("completed");
-        setExportedPath(event.path);
-        onNotice("480p vocal MP4 is ready.");
+        setVideoExportState("completed");
+        setExportedVideoPath(event.path);
+        onNotice("480p black-screen MP4 is ready.");
       }
       if (event.state === "failed") {
-        setExportState("idle");
+        setVideoExportState("idle");
         onNotice(event.message ?? "Could not export the MP4 file.");
       }
     }
-  }), [onNotice]);
+    if (event.type === "export_audio" && event.requestId === audioExportRequestRef.current) {
+      if (event.state === "started") setAudioExportState("exporting");
+      if (event.state === "completed" && event.path) {
+        setAudioExportState("completed");
+        setExportedAudioPath(event.path);
+        onNotice(`${(event.format ?? audioFormat).toUpperCase()} audio clip is ready.`);
+      }
+      if (event.state === "failed") {
+        setAudioExportState("idle");
+        onNotice(event.message ?? "Could not export the audio file.");
+      }
+    }
+  }), [audioFormat, onNotice]);
 
   useEffect(() => {
     resumeTimeRef.current = 0;
@@ -348,13 +443,18 @@ export function ResultPlayer({ item, disabled, onReveal, onNotice }: ResultPlaye
     setCurrentTime(0);
     setDuration(0);
     setAudioError(false);
+    setDisplayGain("auto");
     setClipStart("0");
     setClipEnd("");
     setClipEdited(false);
+    clipInitializedRef.current = false;
+    setPresetSeconds(15);
     clipPreviewRangeRef.current = null;
     setPreviewingClip(false);
-    setExportState("idle");
-    setExportedPath(null);
+    setAudioExportState("idle");
+    setVideoExportState("idle");
+    setExportedAudioPath(null);
+    setExportedVideoPath(null);
   }, [item?.id]);
 
   useEffect(() => {
@@ -393,6 +493,8 @@ export function ResultPlayer({ item, disabled, onReveal, onNotice }: ResultPlaye
     setPreviewingClip(false);
     resumeTimeRef.current = audio?.currentTime ?? currentTime;
     resumePlaybackRef.current = Boolean(audio && !audio.paused);
+    setExportedAudioPath(null);
+    setExportedVideoPath(null);
     setTrack(nextTrack);
   }
 
@@ -402,7 +504,7 @@ export function ResultPlayer({ item, disabled, onReveal, onNotice }: ResultPlaye
     audio.currentTime = resumeAt;
     setDuration(nextDuration);
     setCurrentTime(resumeAt);
-    if (!clipEdited && track === "vocals") setClipEnd(inputTime(nextDuration));
+    initializeClip(nextDuration);
     if (resumePlaybackRef.current) {
       resumePlaybackRef.current = false;
       try {
@@ -469,6 +571,15 @@ export function ResultPlayer({ item, disabled, onReveal, onNotice }: ResultPlaye
     setClipEnd(inputTime(end));
   }
 
+  function initializeClip(nextDuration: number) {
+    if (clipInitializedRef.current || !Number.isFinite(nextDuration) || nextDuration <= 0) return;
+    clipInitializedRef.current = true;
+    const range = clipRangeForPreset(0, presetSeconds, nextDuration);
+    setClipStart(inputTime(range.start));
+    setClipEnd(inputTime(range.end));
+    setClipEdited(range.end < nextDuration);
+  }
+
   function resetClip() {
     const audio = audioRef.current;
     if (previewingClip) audio?.pause();
@@ -477,6 +588,12 @@ export function ResultPlayer({ item, disabled, onReveal, onNotice }: ResultPlaye
     setClipStart("0");
     setClipEnd(inputTime(duration));
     setClipEdited(false);
+  }
+
+  function applyPresetSeconds(seconds: number) {
+    setPresetSeconds(seconds);
+    const range = clipRangeForPreset(clipRange.start, seconds, duration);
+    setClipRange(range.start, range.end);
   }
 
   async function previewClip() {
@@ -496,11 +613,6 @@ export function ResultPlayer({ item, disabled, onReveal, onNotice }: ResultPlaye
     clipPreviewRangeRef.current = range;
     resumeTimeRef.current = range.start;
     setPreviewingClip(true);
-    if (track !== "vocals") {
-      resumePlaybackRef.current = true;
-      setTrack("vocals");
-      return;
-    }
     audio.currentTime = range.start;
     setCurrentTime(range.start);
     try {
@@ -513,26 +625,49 @@ export function ResultPlayer({ item, disabled, onReveal, onNotice }: ResultPlaye
   }
 
   function exportVideo() {
-    const vocals = tracks.vocals;
-    if (!vocals) return;
+    if (!activePath) return;
     const range = parseClipRange(clipStart, clipEnd, duration);
     if (!range) {
       onNotice("Enter a valid start and end time within the track.");
       return;
     }
     const requestId = newId();
-    exportRequestRef.current = requestId;
-    setExportState("exporting");
-    setExportedPath(null);
+    videoExportRequestRef.current = requestId;
+    setVideoExportState("exporting");
+    setExportedVideoPath(null);
     void backend.send({
       type: "export_video",
       requestId,
-      path: vocals,
+      path: activePath,
       startSeconds: clipEdited ? range.start : 0,
       endSeconds: clipEdited ? range.end : null,
     }).catch(() => {
-      setExportState("idle");
+      setVideoExportState("idle");
       onNotice("Could not start the MP4 export.");
+    });
+  }
+
+  function exportAudio() {
+    if (!activePath) return;
+    const range = parseClipRange(clipStart, clipEnd, duration);
+    if (!range) {
+      onNotice("Enter a valid start and end time within the track.");
+      return;
+    }
+    const requestId = newId();
+    audioExportRequestRef.current = requestId;
+    setAudioExportState("exporting");
+    setExportedAudioPath(null);
+    void backend.send({
+      type: "export_audio",
+      requestId,
+      path: activePath,
+      format: audioFormat,
+      startSeconds: clipEdited ? range.start : 0,
+      endSeconds: clipEdited ? range.end : null,
+    }).catch(() => {
+      setAudioExportState("idle");
+      onNotice("Could not start the audio export.");
     });
   }
 
@@ -543,7 +678,7 @@ export function ResultPlayer({ item, disabled, onReveal, onNotice }: ResultPlaye
         <div>
           <span className="eyebrow">RESULT MONITOR</span>
           <strong>Preview appears when a track is complete</strong>
-          <small>Compare stems, trim by time, and export a 480p vocal video without leaving SPLTR.</small>
+          <small>Compare stems, trim by time, and export audio or a 480p black-screen video.</small>
         </div>
       </section>
     );
@@ -559,7 +694,7 @@ export function ResultPlayer({ item, disabled, onReveal, onNotice }: ResultPlaye
           const nextDuration = event.currentTarget.duration;
           if (!Number.isFinite(nextDuration) || nextDuration <= 0) return;
           setDuration(nextDuration);
-          if (!clipEdited && track === "vocals") setClipEnd(inputTime(nextDuration));
+          initializeClip(nextDuration);
         }}
         onTimeUpdate={(event) => handleTimeUpdate(event.currentTarget)}
         onPlay={() => setPlaying(true)}
@@ -591,7 +726,7 @@ export function ResultPlayer({ item, disabled, onReveal, onNotice }: ResultPlaye
           {playing ? <Pause size={16} fill="currentColor" /> : <Play size={16} fill="currentColor" />}
         </button>
         <span className="timecode">{formatPlayerTime(currentTime)}</span>
-        <WaveformTimeline peaks={waveform} loading={waveformLoading} currentTime={currentTime} duration={duration} onSeek={seek} />
+        <WaveformTimeline peaks={waveform} loading={waveformLoading} currentTime={currentTime} duration={duration} displayGain={displayGain} onSeek={seek} />
         <span className="timecode">{formatPlayerTime(duration)}</span>
         <Volume2 size={15} className="volume-icon" />
         <input className="volume-slider" type="range" min={0} max={1} step={0.02} value={volume} onChange={(event) => changeVolume(Number(event.target.value))} aria-label="Preview volume" />
@@ -607,16 +742,25 @@ export function ResultPlayer({ item, disabled, onReveal, onNotice }: ResultPlaye
         startValue={clipStart}
         endValue={clipEnd}
         previewing={previewingClip}
-        exporting={exportState === "exporting"}
+        exportingAudio={audioExportState === "exporting"}
+        exportingVideo={videoExportState === "exporting"}
         disabled={disabled}
-        exportedPath={exportedPath}
+        displayGain={displayGain}
+        presetSeconds={presetSeconds}
+        audioFormat={audioFormat}
+        exportedAudioPath={exportedAudioPath}
+        exportedVideoPath={exportedVideoPath}
         onChange={setClipRange}
         onSeek={seek}
         onPreview={() => void previewClip()}
         onReset={resetClip}
         onStartInput={(value) => { if (previewingClip) audioRef.current?.pause(); clipPreviewRangeRef.current = null; setPreviewingClip(false); setClipEdited(true); setClipStart(value); }}
         onEndInput={(value) => { if (previewingClip) audioRef.current?.pause(); clipPreviewRangeRef.current = null; setPreviewingClip(false); setClipEdited(true); setClipEnd(value); }}
-        onExport={exportVideo}
+        onDisplayGainChange={setDisplayGain}
+        onPresetSeconds={applyPresetSeconds}
+        onAudioFormatChange={setAudioFormat}
+        onExportAudio={exportAudio}
+        onExportVideo={exportVideo}
         onReveal={onReveal}
       />
     </section>

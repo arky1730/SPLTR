@@ -146,7 +146,7 @@ export default function App() {
       <main className="workspace">
         <section className="hero-column">
           <div className="intro"><span className="eyebrow">LOCAL AI STEM SEPARATION</span><h1>Split the track.<br /><em>Hear the difference.</em></h1><p>Drop audio, separate locally, and review every stem in one workspace.</p></div>
-          <DropZone disabled={processing} onBrowse={() => void browse()} onBrowserFiles={addBrowserFiles} />
+          <DropZone compact={items.length > 0} disabled={processing} onBrowse={() => void browse()} onBrowserFiles={addBrowserFiles} />
           <div className="quick-settings">
             <button onClick={() => setSettingsOpen(true)}><Zap size={16} /><span><small>Model</small><strong>{modelLabel}</strong></span></button>
             <button onClick={() => setSettingsOpen(true)}><Gauge size={16} /><span><small>Device</small><strong>{device?.type === "cuda" ? device.name.replace("NVIDIA GeForce ", "") : device?.name ?? "Detecting…"}</strong></span></button>

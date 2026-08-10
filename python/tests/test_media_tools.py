@@ -3,7 +3,11 @@ from pathlib import Path
 
 import pytest
 
-from spltr_backend.media_tools import build_black_video_command, waveform_peaks_from_pcm
+from spltr_backend.media_tools import (
+    build_audio_export_command,
+    build_black_video_command,
+    waveform_peaks_from_pcm,
+)
 
 
 def test_waveform_reduces_and_normalizes_pcm() -> None:
@@ -24,3 +28,20 @@ def test_black_video_command_is_480p_and_clipped() -> None:
     assert command[command.index("-ss") + 1] == "12.500"
     assert command[command.index("-t") + 1] == "29.500"
     assert command[-1] == "song_vocals_clip.mp4"
+
+
+@pytest.mark.parametrize(
+    ("audio_format", "codec"),
+    [("wav", "pcm_s24le"), ("mp3", "libmp3lame")],
+)
+def test_audio_export_command_is_clipped_and_uses_expected_codec(
+    audio_format: str, codec: str
+) -> None:
+    output = Path(f"song_vocals_clip.{audio_format}")
+    command = build_audio_export_command(
+        Path("ffmpeg.exe"), Path("song_vocals.wav"), output, audio_format, 4.0, 19.0  # type: ignore[arg-type]
+    )
+    assert command[command.index("-ss") + 1] == "4.000"
+    assert command[command.index("-t") + 1] == "15.000"
+    assert command[command.index("-c:a") + 1] == codec
+    assert command[-1] == str(output)

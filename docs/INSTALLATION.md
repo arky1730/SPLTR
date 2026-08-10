@@ -33,7 +33,11 @@ Runtime files are stored under `%APPDATA%\app.spltr.desktop`:
 
 When a track completes, select it in the queue to compare **Original**, **Vocals**, and **Instrumental** in the result monitor. Use the folder button on the queue row or **Show in folder** in the monitor to reveal the generated WAV files in File Explorer.
 
-The waveform is generated locally with the bundled FFmpeg. Drag the **IN** and **OUT** handles to select a clip, or drag the highlighted middle section to move the whole selection. Start and end fields allow 0.1-second precision, **Preview clip** plays only the selected range, and **Full track** resets the range. Select **Export MP4** to create an 854×480 black-screen H.264/AAC video beside the vocal WAV. A full export is named `song_vocals.mp4`; a trimmed export uses `song_vocals_clip.mp4`. Existing videos are never overwritten.
+The waveform is generated locally with the bundled FFmpeg. **Wave display** defaults to **Auto**, which raises quiet peaks only on screen; it never changes playback volume or exported audio. Fixed 1×, 2×, 4×, and 8× display gain options are also available.
+
+Drag the **IN** and **OUT** handles to select a clip, or drag the highlighted middle section to move the whole selection. Start and end fields allow 0.1-second precision. The 4–30 second preset slider keeps IN fixed and moves OUT; near the end of a track it shifts the complete selection left to preserve the requested length. **Preview clip** plays only the selected range, and **Full track** resets it.
+
+The export controls use the currently selected **Original**, **Vocals**, or **Instrumental** track. Choose **WAV** or **MP3**, then select **Export audio**, or select **Black MP4** for an 854×480 H.264/AAC video. Exports follow the configured output destination. Trimmed files use `_clip`; full audio exports use `_export`. Existing files are never overwritten and receive `(1)`, `(2)`, and later suffixes when needed.
 
 For `song.mp3`, SPLTR creates `song_vocals.wav` and `song_instrumental.wav`. Existing output is never overwritten. If either name exists, SPLTR creates the next matched pair, such as `song_vocals (1).wav` and `song_instrumental (1).wav`.
 

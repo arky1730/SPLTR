@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatPlayerTime, parseClipRange } from "./ResultPlayer";
+import { adjustWaveformPeaks, clipRangeForPreset, formatPlayerTime, parseClipRange } from "./ResultPlayer";
 
 describe("formatPlayerTime", () => {
   it("formats transport time without decimals", () => {
@@ -21,5 +21,30 @@ describe("parseClipRange", () => {
   it("rejects reversed and out-of-track ranges", () => {
     expect(parseClipRange("20", "10", 90)).toBeNull();
     expect(parseClipRange("0", "91", 90)).toBeNull();
+  });
+});
+
+describe("adjustWaveformPeaks", () => {
+  it("boosts quiet display peaks without changing or exceeding normalized bounds", () => {
+    const source = [0.01, 0.25, 1];
+    const adjusted = adjustWaveformPeaks(source, "auto");
+    expect(adjusted[0]).toBeGreaterThan(source[0]);
+    expect(adjusted[1]).toBeGreaterThan(source[1]);
+    expect(adjusted[2]).toBe(1);
+    expect(source).toEqual([0.01, 0.25, 1]);
+  });
+
+  it("supports fixed display gain with clipping", () => {
+    expect(adjustWaveformPeaks([0.1, 0.4], 4)).toEqual([0.4, 1]);
+  });
+});
+
+describe("clipRangeForPreset", () => {
+  it("keeps the start anchor when the preset fits", () => {
+    expect(clipRangeForPreset(5, 10, 30)).toEqual({ start: 5, end: 15 });
+  });
+
+  it("shifts left near the track end to preserve the preset length", () => {
+    expect(clipRangeForPreset(25, 10, 30)).toEqual({ start: 20, end: 30 });
   });
 });
