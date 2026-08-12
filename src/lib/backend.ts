@@ -67,6 +67,17 @@ class BackendBridge {
     return typeof result === "string" ? [result] : result ?? [];
   }
 
+  async selectVideo(): Promise<string | null> {
+    if (!isTauri()) return "C:\\Video\\Night Session.mp4";
+    const { open } = await import("@tauri-apps/plugin-dialog");
+    const result = await open({
+      multiple: false,
+      title: "Choose a video to extract audio",
+      filters: [{ name: "Video", extensions: ["mp4", "mov", "mkv", "avi", "webm", "m4v"] }],
+    });
+    return typeof result === "string" ? result : null;
+  }
+
   async revealInFolder(path: string): Promise<void> {
     if (!isTauri()) return;
     await invoke("reveal_in_folder", { path });
@@ -121,6 +132,14 @@ class BackendBridge {
         format: command.format,
         path: command.path.replace(/\.[^.]+$/i, command.endSeconds === null ? `_export.${command.format}` : `_clip.${command.format}`),
       }), 900);
+    }
+    if (command.type === "extract_video_audio") {
+      this.emit({ type: "extract_video_audio", requestId: command.requestId, state: "started", format: command.format });
+      window.setTimeout(() => this.emit({
+        type: "extract_video_audio", requestId: command.requestId, state: "completed",
+        format: command.format,
+        path: command.path.replace(/\.[^.]+$/i, `_audio.${command.format}`),
+      }), 950);
     }
     if (command.type === "start_queue") this.simulateQueue(command.items);
   }

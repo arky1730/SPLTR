@@ -4,12 +4,14 @@ import { DropZone } from "./components/DropZone";
 import { QueuePanel } from "./components/QueuePanel";
 import { ResultPlayer } from "./components/ResultPlayer";
 import { SettingsPanel } from "./components/SettingsPanel";
+import { VideoAudioExtractor } from "./components/VideoAudioExtractor";
 import { DownloadOverlay, type DownloadState } from "./components/DownloadOverlay";
 import { backend } from "./lib/backend";
 import { fileName, formatDuration, newId } from "./lib/format";
 import type { AppSettings, BackendEvent, DeviceInfo, QueueItem } from "./types";
 
 const DEFAULT_SETTINGS: AppSettings = { outputFolder: null, outputMode: "source", model: "htdemucs", deviceMode: "auto", concurrentJobs: 1, theme: "dark" };
+const VIDEO_PATH = /\.(mp4|mov|mkv|avi|webm|m4v)$/i;
 
 function loadSettings(): AppSettings {
   try { return { ...DEFAULT_SETTINGS, ...JSON.parse(localStorage.getItem("spltr.settings") ?? "{}") as Partial<AppSettings> }; }
@@ -26,6 +28,7 @@ export default function App() {
   const [connected, setConnected] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [download, setDownload] = useState<DownloadState>({ visible: false, kind: "model", progress: -1, failed: false });
+  const [droppedVideoPath, setDroppedVideoPath] = useState<string | null>(null);
   const pendingScan = useRef(new Map<string, true>());
 
   const applyEvent = (event: BackendEvent) => {
@@ -59,7 +62,7 @@ export default function App() {
   useEffect(() => {
     const unsubscribe = backend.subscribe(applyEvent);
     let unlistenDrop: (() => void) | undefined;
-    void backend.start().then(() => backend.onPathDrop(addPaths)).then((fn) => { unlistenDrop = fn; }).catch((error: unknown) => {
+    void backend.start().then(() => backend.onPathDrop(routeDroppedPaths)).then((fn) => { unlistenDrop = fn; }).catch((error: unknown) => {
       setNotice(error instanceof Error ? error.message : "Could not start the local AI engine.");
     });
     return () => { unsubscribe(); unlistenDrop?.(); void backend.stop(); };
@@ -84,6 +87,14 @@ export default function App() {
     const requestId = newId();
     pendingScan.current.set(requestId, true);
     void backend.send({ type: "scan", requestId, paths });
+  }
+
+  function routeDroppedPaths(paths: string[]) {
+    if (paths.length === 1 && VIDEO_PATH.test(paths[0])) {
+      setDroppedVideoPath(paths[0]);
+      return;
+    }
+    addPaths(paths);
   }
 
   async function browse() { addPaths(await backend.selectAudio()); }
@@ -152,6 +163,14 @@ export default function App() {
             <button onClick={() => setSettingsOpen(true)}><Gauge size={16} /><span><small>Device</small><strong>{device?.type === "cuda" ? device.name.replace("NVIDIA GeForce ", "") : device?.name ?? "Detecting…"}</strong></span></button>
             <button onClick={() => setSettingsOpen(true)}><FolderOutput size={16} /><span><small>Output</small><strong>{outputLabel}</strong></span></button>
           </div>
+          <VideoAudioExtractor
+            disabled={processing}
+            outputLabel={outputLabel}
+            droppedPath={droppedVideoPath}
+            onDroppedPathConsumed={() => setDroppedVideoPath(null)}
+            onNotice={setNotice}
+            onReveal={(path) => void revealInFolder(path)}
+          />
         </section>
 
         <section className="queue-column">

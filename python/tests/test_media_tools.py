@@ -7,8 +7,18 @@ from spltr_backend.media_tools import (
     build_audio_export_command,
     build_black_video_command,
     build_export_audio_filter,
+    build_video_audio_extract_command,
     waveform_peaks_from_pcm,
 )
+
+
+def test_video_audio_extract_command_selects_first_audio_stream() -> None:
+    command = build_video_audio_extract_command(
+        Path("ffmpeg.exe"), Path("demo.mp4"), Path("demo_audio.mp3"), "mp3"
+    )
+    assert command[command.index("-map") + 1] == "0:a:0"
+    assert command[command.index("-c:a") + 1] == "libmp3lame"
+    assert command[-1] == "demo_audio.mp3"
 
 
 def test_waveform_reduces_and_normalizes_pcm() -> None:

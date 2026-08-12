@@ -37,13 +37,17 @@ The waveform is generated locally with the bundled FFmpeg. **Wave display** defa
 
 Choose a fixed **Output length** from 4–30 seconds. The large output lane is the final file itself: drag **TRIM IN** or **TRIM OUT** inward and the removed part becomes a visible silence block inside that same duration. Drag the waveform block to move it between leading and trailing silence. The total output length never changes while trimming.
 
-Use **+ Lead silence** or **+ End silence** to add 0.1 seconds explicitly; repeated clicks continue trimming the audio into a clearly hatched silence block. The precise fields can set an exact value. The white clip scrub bar and playhead cover the complete output frame, including silence. Click the output waveform or drag the scrubber, then choose **Preview clip** to play from that exact clip position.
+Use **+ Lead silence** or **+ End silence** to add 0.1 seconds explicitly; repeated clicks continue trimming the audio into a clearly hatched silence block. The precise fields can set an exact value. Playback is integrated into the output track: click the waveform to seek, drag the white playhead to scrub, and use the play button at the left of that same track. A short click on the audio block seeks; dragging the block moves it between leading and trailing silence.
 
-Drag the smaller purple block in **Source position** to choose a different part of the original track without changing the output placement. Green fade-in and fade-out handles move directly over the waveform and can be set independently. Fit, 2×, 4×, 8×, and 16× zoom levels and the precise-value fields provide 0.01-second control. **Preview clip** advances the local playhead through leading silence, faded audio, and trailing silence.
+Drag the smaller purple block in **Source position** to choose a different part of the original track without changing the output placement. Green fade-in and fade-out handles form diagonal envelopes directly over the waveform and can be set independently. Fit, 2×, 4×, 8×, and 16× zoom levels and the precise-value fields provide 0.01-second control. Track preview advances the local playhead through leading silence, faded audio, and trailing silence.
 
 The export controls use the currently selected **Original**, **Vocals**, or **Instrumental** track. Choose **WAV** or **MP3**, then select **Export audio**, or select **Black MP4** for an 854×480 H.264/AAC video. The fixed-duration timeline, silence blocks, and independent fades apply identically to audio and video. Exports follow the configured output destination. Trimmed files use `_clip`; existing files are never overwritten and receive `(1)`, `(2)`, and later suffixes when needed.
 
 For `song.mp3`, SPLTR creates `song_vocals.wav` and `song_instrumental.wav`. Existing output is never overwritten. If either name exists, SPLTR creates the next matched pair, such as `song_vocals (1).wav` and `song_instrumental (1).wav`.
+
+## Extract audio from video
+
+Use **Video → Audio** in the lower-left quick tool. Drop one MP4, MOV, MKV, AVI, WebM, or M4V file anywhere on the window, or choose it with the file picker. Select 24-bit WAV or 320 kbps MP3 and choose **Extract audio**. The file is written beside the video by default, or into the custom output folder from Settings, with `_audio` and a collision-safe numeric suffix. The operation uses bundled FFmpeg locally and does not upload the video.
 
 ## Troubleshooting
 

@@ -15,7 +15,7 @@ from .audio import decodable_audio
 from .device import detect_device
 from .errors import ProcessingError
 from .logging_setup import configure_logging
-from .media_tools import MediaToolError, export_audio_clip, export_black_video, extract_waveform
+from .media_tools import MediaToolError, export_audio_clip, export_black_video, extract_audio_from_video, extract_waveform
 from .models import DemucsModel, SeparationModel, StemOutputs
 from .naming import available_stem_paths
 from .protocol import EventWriter, parse_command
@@ -93,6 +93,12 @@ class SeparationService:
                 command.get("outputDurationSeconds"),
                 command.get("fadeInSeconds", 0),
                 command.get("fadeOutSeconds", 0),
+            )
+        elif kind == "extract_video_audio":
+            self.start_video_audio_extract(
+                str(command.get("requestId", "")),
+                str(command.get("path", "")),
+                str(command.get("format", "wav")),
             )
         elif kind == "shutdown":
             self.cancel.set()
@@ -487,6 +493,56 @@ class SeparationService:
                 )
 
         self.export_thread = threading.Thread(target=export, name="audio-export", daemon=True)
+        self.export_thread.start()
+
+    def start_video_audio_extract(
+        self, request_id: str, raw_path: str, audio_format: str
+    ) -> None:
+        if not request_id or not raw_path:
+            raise ValueError("Video extraction requires a requestId and path")
+        if audio_format not in {"wav", "mp3"}:
+            raise ValueError("Extraction format must be wav or mp3")
+        selected_format = cast(Literal["wav", "mp3"], audio_format)
+        if self.export_thread and self.export_thread.is_alive():
+            self.writer.emit(
+                "extract_video_audio", requestId=request_id, state="failed",
+                message="Another media export is already running.",
+            )
+            return
+
+        def extract() -> None:
+            self.writer.emit(
+                "extract_video_audio", requestId=request_id, state="started",
+                format=selected_format,
+            )
+            try:
+                with self._settings_lock:
+                    settings = self.settings
+                source = Path(raw_path)
+                output_dir = source.parent if settings.output_mode == "source" else settings.output_folder
+                if output_dir is None:
+                    raise MediaToolError("Choose an output folder before extracting audio.")
+                output = extract_audio_from_video(
+                    self.ffmpeg, source, output_dir, selected_format
+                )
+                self.writer.emit(
+                    "extract_video_audio", requestId=request_id, state="completed",
+                    path=str(output), format=selected_format,
+                )
+                self.logger.info("Extracted %s audio from %s to %s", selected_format.upper(), source, output)
+            except MediaToolError as exc:
+                self.logger.warning("Video audio extraction failed for %s: %s", raw_path, exc)
+                self.writer.emit(
+                    "extract_video_audio", requestId=request_id, state="failed", message=str(exc)
+                )
+            except Exception:
+                self.logger.exception("Unexpected video audio extraction failure for %s", raw_path)
+                self.writer.emit(
+                    "extract_video_audio", requestId=request_id, state="failed",
+                    message="An unexpected error stopped audio extraction.",
+                )
+
+        self.export_thread = threading.Thread(target=extract, name="video-audio-extract", daemon=True)
         self.export_thread.start()
 
     def _model_cached(self, model_name: str) -> bool:

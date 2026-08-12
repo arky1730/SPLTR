@@ -215,7 +215,8 @@ function ClipRangeEditor({
   const scrollRef = useRef<HTMLDivElement>(null);
   const outputTimelineRef = useRef<HTMLDivElement>(null);
   const sourceTimelineRef = useRef<HTMLDivElement>(null);
-  const dragRef = useRef<{ target: DragTarget; originTime: number; layout: FixedClipLayout; fadeIn: number; fadeOut: number } | null>(null);
+  const dragRef = useRef<{ target: DragTarget; originTime: number; layout: FixedClipLayout; fadeIn: number; fadeOut: number; pointerStartX: number; moved: boolean } | null>(null);
+  const scrubRef = useRef(false);
   const [zoom, setZoom] = useState<TimelineZoom>(1);
   const displayPeaks = peaks.length > 0
     ? adjustWaveformPeaks(peaks, displayGain)
@@ -280,6 +281,8 @@ function ClipRangeEditor({
       layout: { ...layout },
       fadeIn: fadeInSeconds,
       fadeOut: fadeOutSeconds,
+      pointerStartX: event.clientX,
+      moved: false,
     };
   }
 
@@ -289,6 +292,10 @@ function ClipRangeEditor({
     const originalContent = drag.layout.sourceEnd - drag.layout.sourceStart;
     const originalAudioStart = drag.layout.silenceBefore;
     const originalAudioEnd = safeOutputDuration - drag.layout.silenceAfter;
+    if (drag.target === "audio-block" && !drag.moved) {
+      if (Math.abs(event.clientX - drag.pointerStartX) < 4) return;
+      drag.moved = true;
+    }
 
     if (drag.target === "source-block") {
       const delta = sourceTimeAt(event.clientX) - drag.originTime;
@@ -320,8 +327,10 @@ function ClipRangeEditor({
   }
 
   function endDrag(event: ReactPointerEvent<HTMLButtonElement>) {
+    const drag = dragRef.current;
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
     dragRef.current = null;
+    if (drag?.target === "audio-block" && !drag.moved) onClipSeek(outputTimeAt(event.clientX));
   }
 
   function adjustHandle(target: "start" | "end", event: ReactKeyboardEvent<HTMLButtonElement>) {
@@ -334,7 +343,7 @@ function ClipRangeEditor({
     const fakeDrag = {
       target: target === "start" ? "audio-start" as const : "audio-end" as const,
       originTime: target === "start" ? audioStart : audioEnd,
-      layout: { ...layout }, fadeIn: fadeInSeconds, fadeOut: fadeOutSeconds,
+      layout: { ...layout }, fadeIn: fadeInSeconds, fadeOut: fadeOutSeconds, pointerStartX: 0, moved: true,
     };
     dragRef.current = fakeDrag;
     const originalRect = outputTimelineRef.current?.getBoundingClientRect();
@@ -345,9 +354,39 @@ function ClipRangeEditor({
     dragRef.current = null;
   }
 
-  function seekFromOutput(event: ReactPointerEvent<HTMLDivElement>) {
+  function beginOutputScrub(event: ReactPointerEvent<HTMLDivElement>) {
     if ((event.target as HTMLElement).closest("[data-trim-control]")) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    scrubRef.current = true;
     onClipSeek(outputTimeAt(event.clientX));
+  }
+
+  function continueOutputScrub(event: ReactPointerEvent<HTMLDivElement>) {
+    if (!scrubRef.current) return;
+    onClipSeek(outputTimeAt(event.clientX));
+  }
+
+  function endOutputScrub(event: ReactPointerEvent<HTMLDivElement>) {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    scrubRef.current = false;
+  }
+
+  function beginPlayheadScrub(event: ReactPointerEvent<HTMLButtonElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    scrubRef.current = true;
+    onClipSeek(outputTimeAt(event.clientX));
+  }
+
+  function continuePlayheadScrub(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (!scrubRef.current) return;
+    onClipSeek(outputTimeAt(event.clientX));
+  }
+
+  function endPlayheadScrub(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    scrubRef.current = false;
   }
 
   function setSilenceBefore(value: number) {
@@ -399,8 +438,24 @@ function ClipRangeEditor({
         <button className="reset-clip" onClick={onReset}><RotateCcw size={12} /> Reset clip</button>
       </div>
 
-      <div className="clip-range-scroll" ref={scrollRef} data-zoom={zoom}>
-      <div className={`clip-range-timeline fixed-output-timeline ${loading ? "loading" : ""}`} ref={outputTimelineRef} onPointerDown={seekFromOutput} style={{ width: `${zoom * 100}%` }}>
+      <div className="clip-track-transport">
+        <div className="clip-track-controls">
+          <button className={`clip-track-play ${previewing ? "active" : ""}`} disabled={safeDuration <= 0} onClick={onPreview} aria-label={previewing ? "Stop clip preview" : "Play clip preview"}>
+            {previewing ? <Pause size={15} fill="currentColor" /> : <Play size={15} fill="currentColor" />}
+          </button>
+          <span>{preciseTime(safeClipPosition)}</span>
+          <small>/ {preciseTime(safeOutputDuration)}</small>
+        </div>
+        <div className="clip-range-scroll" ref={scrollRef} data-zoom={zoom}>
+      <div
+        className={`clip-range-timeline fixed-output-timeline ${loading ? "loading" : ""}`}
+        ref={outputTimelineRef}
+        onPointerDown={beginOutputScrub}
+        onPointerMove={continueOutputScrub}
+        onPointerUp={endOutputScrub}
+        onPointerCancel={endOutputScrub}
+        style={{ width: `${zoom * 100}%` }}
+      >
         <div className="output-ruler"><span>0.00</span><strong>OUTPUT CLIP · {safeOutputDuration.toFixed(2)} SEC</strong><span>{safeOutputDuration.toFixed(2)}</span></div>
         <div className="silence-region silence-before" style={{ width: `${audioStartPercent}%` }}><span>{layout.silenceBefore >= .01 ? `${layout.silenceBefore.toFixed(2)}s` : ""}</span></div>
         <div className="silence-region silence-after" style={{ left: `${audioEndPercent}%` }}><span>{layout.silenceAfter >= .01 ? `${layout.silenceAfter.toFixed(2)}s` : ""}</span></div>
@@ -456,15 +511,24 @@ function ClipRangeEditor({
         {fadeOutSeconds > 0 && <div className="fade-shade fade-shade-out" style={{ left: `${(audioEnd - fadeOutSeconds) / safeOutputDuration * 100}%`, width: `${fadeOutSeconds / safeOutputDuration * 100}%` }} />}
         <button className="fade-handle fade-in-handle" data-trim-control aria-label="Drag fade in" style={{ left: `${(audioStart + fadeInSeconds) / safeOutputDuration * 100}%` }} onPointerDown={(event) => beginDrag("fade-in", event)} onPointerMove={continueDrag} onPointerUp={endDrag} onPointerCancel={endDrag}><span>FADE IN</span></button>
         <button className="fade-handle fade-out-handle" data-trim-control aria-label="Drag fade out" style={{ left: `${(audioEnd - fadeOutSeconds) / safeOutputDuration * 100}%` }} onPointerDown={(event) => beginDrag("fade-out", event)} onPointerMove={continueDrag} onPointerUp={endDrag} onPointerCancel={endDrag}><span>FADE OUT</span></button>
-        <div className="clip-playhead" style={{ left: `${playheadPercent}%` }}><i /></div>
+        <button
+          type="button"
+          className="clip-playhead"
+          data-trim-control
+          aria-label="Clip playhead"
+          style={{ left: `${playheadPercent}%` }}
+          onPointerDown={beginPlayheadScrub}
+          onPointerMove={continuePlayheadScrub}
+          onPointerUp={endPlayheadScrub}
+          onPointerCancel={endPlayheadScrub}
+        ><i /></button>
+      </div>
       </div>
       </div>
 
-      <div className="clip-scrub-row">
+      <div className="clip-silence-actions">
         <button type="button" className="silence-add" disabled={contentDuration <= MIN_AUDIO_SECONDS} onClick={addLeadingSilence}>+ Lead silence</button>
-        <span className="clip-scrub-time">{preciseTime(safeClipPosition)}</span>
-        <input type="range" min="0" max={safeOutputDuration} step="0.01" value={safeClipPosition} onChange={(event) => onClipSeek(Number(event.target.value))} aria-label="Clip playback position" />
-        <span className="clip-scrub-time">{preciseTime(safeOutputDuration)}</span>
+        <span>Click or drag directly on the waveform to seek</span>
         <button type="button" className="silence-add" disabled={contentDuration <= MIN_AUDIO_SECONDS} onClick={addTrailingSilence}>+ End silence</button>
       </div>
 
@@ -505,7 +569,6 @@ function ClipRangeEditor({
       <div className="clip-editor-controls">
         <label><span>SOURCE IN</span><input aria-label="Clip start seconds" type="number" min="0" step="0.01" value={startValue} onChange={(event) => onStartInput(event.target.value)} /></label>
         <label><span>SOURCE OUT</span><input aria-label="Clip end seconds" type="number" min="0" step="0.01" value={endValue} onChange={(event) => onEndInput(event.target.value)} /></label>
-        <button className={`preview-clip ${previewing ? "active" : ""}`} disabled={safeDuration <= 0} onClick={onPreview}>{previewing ? <Pause size={13} /> : <Play size={13} fill="currentColor" />}{previewing ? "Stop preview" : "Preview clip"}</button>
         <div className="audio-export-choice">
           <select aria-label="Audio export format" value={audioFormat} onChange={(event) => onAudioFormatChange(event.target.value as AudioExportFormat)}>
             <option value="wav">WAV</option>

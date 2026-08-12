@@ -46,3 +46,16 @@ def available_audio_export_path(
         if not output.exists():
             return output
         suffix += 1
+
+
+def available_extracted_audio_path(source: Path, output_dir: Path, audio_format: str) -> Path:
+    """Return a non-colliding audio path for a video extraction."""
+    if audio_format not in {"wav", "mp3"}:
+        raise ValueError(f"Unsupported extracted audio format: {audio_format}")
+    suffix = 0
+    while True:
+        marker = "" if suffix == 0 else f" ({suffix})"
+        output = output_dir / f"{source.stem}_audio{marker}.{audio_format}"
+        if not output.exists():
+            return output
+        suffix += 1

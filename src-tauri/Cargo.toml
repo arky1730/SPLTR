@@ -1,6 +1,6 @@
 [package]
 name = "spltr"
-version = "0.8.0"
+version = "0.9.0"
 description = "Private, local AI vocal separation"
 authors = ["SPLTR Contributors"]
 edition = "2021"

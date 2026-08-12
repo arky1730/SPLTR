@@ -8,11 +8,52 @@ import subprocess
 import sys
 from typing import Literal
 
-from .naming import available_audio_export_path, available_video_path
+from .naming import available_audio_export_path, available_extracted_audio_path, available_video_path
 
 
 class MediaToolError(RuntimeError):
     """A recoverable FFmpeg utility failure."""
+
+
+def build_video_audio_extract_command(
+    ffmpeg: Path, source: Path, output: Path, audio_format: Literal["wav", "mp3"]
+) -> list[str]:
+    command = [
+        str(ffmpeg), "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
+        "-i", str(source), "-map", "0:a:0", "-vn",
+    ]
+    if audio_format == "wav":
+        command.extend(["-c:a", "pcm_s24le"])
+    else:
+        command.extend(["-c:a", "libmp3lame", "-b:a", "320k"])
+    command.append(str(output))
+    return command
+
+
+def extract_audio_from_video(
+    ffmpeg: Path, source: Path, output_dir: Path, audio_format: Literal["wav", "mp3"]
+) -> Path:
+    if not source.exists():
+        raise MediaToolError("The selected video no longer exists.")
+    if audio_format not in {"wav", "mp3"}:
+        raise MediaToolError("Extraction format must be WAV or MP3.")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output = available_extracted_audio_path(source, output_dir, audio_format)
+    try:
+        result = subprocess.run(
+            build_video_audio_extract_command(ffmpeg, source, output, audio_format),
+            check=False, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+            creationflags=_creation_flags(),
+        )
+    except OSError as exc:
+        raise MediaToolError("The bundled FFmpeg component could not be started.") from exc
+    if result.returncode != 0:
+        output.unlink(missing_ok=True)
+        detail = result.stderr.decode("utf-8", errors="replace").strip()
+        if "matches no streams" in detail or "Stream map" in detail:
+            raise MediaToolError("This video does not contain an audio track.")
+        raise MediaToolError(detail or "FFmpeg could not extract audio from this video.")
+    return output
 
 
 def _creation_flags() -> int:

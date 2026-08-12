@@ -2,6 +2,7 @@ from pathlib import Path
 
 from spltr_backend.naming import (
     available_audio_export_path,
+    available_extracted_audio_path,
     available_stem_paths,
     available_video_path,
 )
@@ -38,3 +39,9 @@ def test_audio_export_uses_format_suffix_and_never_overwrites(tmp_path: Path) ->
     (tmp_path / "song_vocals_clip.mp3").touch()
     assert available_audio_export_path(source, tmp_path, "mp3", clipped=True).name == "song_vocals_clip (1).mp3"
     assert available_audio_export_path(source, tmp_path, "wav", clipped=False).name == "song_vocals_export.wav"
+
+
+def test_extracted_audio_uses_clear_suffix_and_never_overwrites(tmp_path: Path) -> None:
+    source = Path("C:/Video/demo.mp4")
+    (tmp_path / "demo_audio.wav").touch()
+    assert available_extracted_audio_path(source, tmp_path, "wav").name == "demo_audio (1).wav"

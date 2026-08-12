@@ -44,6 +44,7 @@ export type BackendEvent =
   | { type: "waveform"; requestId: string; path: string; peaks: number[]; message?: string }
   | { type: "export_video"; requestId: string; state: "started" | "completed" | "failed"; path?: string; message?: string }
   | { type: "export_audio"; requestId: string; state: "started" | "completed" | "failed"; path?: string; format?: "wav" | "mp3"; message?: string }
+  | { type: "extract_video_audio"; requestId: string; state: "started" | "completed" | "failed"; path?: string; format?: "wav" | "mp3"; message?: string }
   | { type: "cache_cleared" }
   | { type: "error"; code: string; message: string; recoverable: boolean };
 
@@ -57,4 +58,5 @@ export type BackendCommand =
   | { type: "waveform"; requestId: string; path: string }
   | { type: "export_video"; requestId: string; path: string; startSeconds: number; endSeconds: number | null; contentDurationSeconds: number; silenceBeforeSeconds: number; silenceAfterSeconds: number; outputDurationSeconds: number; fadeInSeconds: number; fadeOutSeconds: number }
   | { type: "export_audio"; requestId: string; path: string; format: "wav" | "mp3"; startSeconds: number; endSeconds: number | null; contentDurationSeconds: number; silenceBeforeSeconds: number; silenceAfterSeconds: number; outputDurationSeconds: number; fadeInSeconds: number; fadeOutSeconds: number }
+  | { type: "extract_video_audio"; requestId: string; path: string; format: "wav" | "mp3" }
   | { type: "shutdown" };
