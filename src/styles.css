@@ -263,8 +263,8 @@ button:focus-visible, [role="button"]:focus-visible { outline: 2px solid var(--a
 .clip-handle span { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); color: #171220; font-size: 5px; line-height: 6px; font-weight: 800; writing-mode: vertical-rl; pointer-events: none; }
 .clip-handle:focus-visible { outline: 1px solid var(--accent-2); outline-offset: 1px; border-radius: 5px; }
 .fade-shade { position: absolute; z-index: 4; top: 19px; bottom: 2px; pointer-events: none; opacity: .9; }
-.fade-shade-in { background: linear-gradient(to top right, rgba(112,221,179,.28) 0 48.7%, rgba(112,221,179,.86) 49.2% 50.8%, transparent 51.3%); }
-.fade-shade-out { background: linear-gradient(to bottom right, transparent 0 48.7%, rgba(112,221,179,.86) 49.2% 50.8%, rgba(112,221,179,.28) 51.3%); }
+.fade-shade-in { background: linear-gradient(to bottom right, rgba(112,221,179,.28) 0 48.7%, rgba(112,221,179,.86) 49.2% 50.8%, transparent 51.3%); }
+.fade-shade-out { background: linear-gradient(to top right, transparent 0 48.7%, rgba(112,221,179,.86) 49.2% 50.8%, rgba(112,221,179,.28) 51.3%); }
 .fade-handle { position: absolute; z-index: 10; top: 18px; width: 13px; height: 13px; transform: translate(-50%, -35%) rotate(45deg); border: 2px solid var(--success); border-radius: 3px; background: #11171a; color: var(--success); cursor: ew-resize; padding: 0; box-shadow: 0 2px 9px rgba(0,0,0,.42); touch-action: none; }
 .fade-handle::after { content: ""; position: absolute; width: 1px; height: 12px; left: 50%; top: 10px; background: rgba(112,221,179,.72); transform: rotate(-45deg); transform-origin: top; }
 .fade-handle span { display: none; }
