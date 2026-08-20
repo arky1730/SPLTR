@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AudioLines, Check, FolderOutput, Gauge, Play, Settings, ShieldCheck, Square, Zap } from "lucide-react";
+import { AudioLines, BookOpen, Check, ExternalLink, FolderOutput, Gauge, Play, Settings, ShieldCheck, Square, Zap } from "lucide-react";
 import { DropZone } from "./components/DropZone";
 import { QueuePanel } from "./components/QueuePanel";
 import { ResultPlayer } from "./components/ResultPlayer";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { VideoAudioExtractor } from "./components/VideoAudioExtractor";
+import { HelpModal } from "./components/HelpModal";
 import { DownloadOverlay, type DownloadState } from "./components/DownloadOverlay";
 import { backend } from "./lib/backend";
 import { fileName, formatDuration, newId } from "./lib/format";
@@ -21,6 +22,7 @@ function loadSettings(): AppSettings {
 export default function App() {
   const [settings, setSettings] = useState(loadSettings);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const [items, setItems] = useState<QueueItem[]>([]);
   const [device, setDevice] = useState<DeviceInfo | null>(null);
   const [processing, setProcessing] = useState(false);
@@ -126,6 +128,14 @@ export default function App() {
     }
   }
 
+  async function openCreatorPage() {
+    try {
+      await backend.openCreatorPage();
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "만든이 페이지를 열지 못했습니다.");
+    }
+  }
+
   async function retryDownload() {
     if (download.kind === "runtime") {
       setDownload((current) => ({ ...current, failed: false, progress: -1, message: "Restarting the local AI engine…" }));
@@ -151,7 +161,11 @@ export default function App() {
       <header className="app-header">
         <div className="brand"><div className="brand-mark"><AudioLines size={22} /></div><div><strong>SPLTR</strong><span>VOCAL SEPARATOR</span></div></div>
         <div className="header-status"><ShieldCheck size={14} /><span>100% local</span><i /><span className={connected ? "online" : ""}>{connected ? "Engine ready" : "Starting engine"}</span></div>
-        <button className="settings-button" onClick={() => setSettingsOpen(true)}><Settings size={18} /><span>Settings</span></button>
+        <div className="header-actions">
+          <button className="header-link-button" onClick={() => setHelpOpen(true)}><BookOpen size={15} /><span>사용법</span></button>
+          <button className="header-link-button creator-link" onClick={() => void openCreatorPage()}><ExternalLink size={14} /><span>만든이 · @r2voltz</span></button>
+          <button className="settings-button" onClick={() => setSettingsOpen(true)}><Settings size={18} /><span>Settings</span></button>
+        </div>
       </header>
 
       <main className="workspace">
@@ -197,6 +211,7 @@ export default function App() {
 
       <SettingsPanel open={settingsOpen} settings={settings} device={device} onChange={setSettings} onClose={() => setSettingsOpen(false)} onChooseFolder={() => void chooseFolder()} onDeleteModels={() => void backend.send({ type: "delete_models" })} />
       {settingsOpen && <div className="panel-shade" onClick={() => setSettingsOpen(false)} />}
+      <HelpModal open={helpOpen} onClose={() => setHelpOpen(false)} onOpenCreator={() => void openCreatorPage()} />
       <DownloadOverlay state={download} onRetry={() => void retryDownload()} />
       {notice && <div className="toast"><Check size={16} />{notice}</div>}
     </div>

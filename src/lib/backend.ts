@@ -83,6 +83,14 @@ class BackendBridge {
     await invoke("reveal_in_folder", { path });
   }
 
+  async openCreatorPage(): Promise<void> {
+    if (!isTauri()) {
+      window.open("https://www.threads.com/@r2voltz?hl=ko", "_blank", "noopener,noreferrer");
+      return;
+    }
+    await invoke("open_creator_page");
+  }
+
   async onPathDrop(handler: (paths: string[]) => void): Promise<UnlistenFn> {
     if (!isTauri()) return () => undefined;
     return getCurrentWebview().onDragDropEvent((event) => {

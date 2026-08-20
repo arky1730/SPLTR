@@ -13,6 +13,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use std::os::windows::process::CommandExt;
 
 const CREATE_NO_WINDOW: u32 = 0x08000000;
+const CREATOR_URL: &str = "https://www.threads.com/@r2voltz?hl=ko";
 
 struct BackendProcess {
     child: Child,
@@ -169,6 +170,27 @@ fn reveal_in_folder(path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn open_creator_page() -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        let mut command = Command::new("rundll32.exe");
+        command
+            .arg("url.dll,FileProtocolHandler")
+            .arg(CREATOR_URL)
+            .creation_flags(CREATE_NO_WINDOW);
+        command
+            .spawn()
+            .map_err(|e| format!("Could not open the creator page: {e}"))?;
+        Ok(())
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        Err("Opening the creator page is only supported on Windows.".to_string())
+    }
+}
+
+#[tauri::command]
 fn backend_stop(state: State<'_, BackendState>) -> Result<(), String> {
     let mut guard = state
         .0
@@ -193,7 +215,8 @@ pub fn run() {
             backend_start,
             backend_send,
             backend_stop,
-            reveal_in_folder
+            reveal_in_folder,
+            open_creator_page
         ])
         .on_window_event(|window, event| {
             if matches!(event, tauri::WindowEvent::Destroyed) {

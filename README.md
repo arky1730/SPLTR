@@ -51,6 +51,7 @@ npm run tauri:dev
 
 ## Documentation
 
+- [한국어 빠른 사용 설명서](docs/USER_GUIDE_KO.md)
 - [Installation and usage](docs/INSTALLATION.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Developer setup](docs/DEVELOPMENT.md)
